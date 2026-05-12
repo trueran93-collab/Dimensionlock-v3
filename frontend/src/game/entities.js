@@ -1,0 +1,698 @@
+const GRAVITY = 0.55;
+const MAX_FALL = 18;
+
+export class Player {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.w = 44; this.h = 72;
+    this.vx = 0; this.vy = 0;
+    this.facingRight = true;
+
+    // Base stats
+    this.maxHp = 100; this.hp = 100;
+    this.maxSp = 100; this.sp = 100;
+    this.speed = 5;
+    this.jumpForce = -15;
+    this.damage = 22;
+    this.attackRange = 1.0;
+    this.attackSpeed = 1.0;
+
+    // Upgrade flags
+    this.hasVoidHunger = false;
+    this.hasComboMastery = false;
+    this.hasShadowStep = false;
+    this.hasLurkersBane = false;
+    this.hasReapersFury = false;
+
+    // Jump
+    this.onGround = false;
+    this.canDoubleJump = true;
+    this.coyoteTime = 0;
+    this.jumpBuffer = 0;
+
+    // Dash
+    this.isDashing = false;
+    this.dashTimer = 0;
+    this.dashDir = 1;
+    this.dashCooldown = 0;
+    this.dashIframes = 0;
+
+    // Combat
+    this.state = 'idle';
+    this.attackTimer = 0;
+    this.attackType = null;
+    this.attackCooldown = 0;
+    this.hurtTimer = 0;
+    this.hitEnemiesThisSwing = new Set();
+
+    // Combo
+    this.combo = 0;
+    this.comboTimer = 0;
+
+    // SP
+    this.spRegenTimer = 0;
+
+    // Anim
+    this.animFrame = 0;
+    this.animTimer = 0;
+    this.deathTimer = 120;
+
+    // Tracking
+    this.kills = 0;
+    this.score = 0;
+    this.floorsCleared = 0;
+  }
+
+  update(keys, platforms, engine) {
+    this.handleInput(keys, engine);
+
+    if (!this.isDashing) {
+      this.vy += GRAVITY;
+      if (this.vy > MAX_FALL) this.vy = MAX_FALL;
+    }
+
+    this.x += this.vx;
+    this.y += this.vy;
+
+    const wasOnGround = this.onGround;
+    this.onGround = false;
+    for (const p of platforms) {
+      const prevBottom = this.y + this.h - this.vy;
+      if (
+        this.x + this.w > p.x && this.x < p.x + p.w &&
+        this.y + this.h >= p.y && prevBottom <= p.y + 4 && this.vy >= 0
+      ) {
+        this.y = p.y - this.h;
+        this.vy = 0;
+        this.onGround = true;
+      }
+    }
+
+    if (!wasOnGround && this.onGround) { this.canDoubleJump = true; }
+    if (wasOnGround && !this.onGround) this.coyoteTime = 7;
+    if (this.coyoteTime > 0) this.coyoteTime--;
+    if (this.jumpBuffer > 0) {
+      this.jumpBuffer--;
+      if (this.onGround || this.coyoteTime > 0) this._doJump();
+    }
+
+    if (this.x < 0) { this.x = 0; this.vx = 0; }
+    if (this.x + this.w > engine.W) { this.x = engine.W - this.w; this.vx = 0; }
+    if (this.y > engine.H + 80) {
+      this.takeDamage(20, engine, 'fall');
+      this.x = engine.W / 2; this.y = 200; this.vy = 0;
+    }
+
+    this._updateTimers();
+    this._updateState();
+
+    this.animTimer++;
+    if (this.animTimer >= 7) { this.animTimer = 0; this.animFrame++; }
+  }
+
+  handleInput(keys, engine) {
+    if (this.state === 'dead') return;
+    if (this.hurtTimer > 30) return;
+
+    const canMove = !['attacking_heavy','attacking_special'].includes(this.state) && !this.isDashing;
+
+    if (canMove) {
+      if (keys.left) { this.vx = -this.speed; this.facingRight = false; }
+      else if (keys.right) { this.vx = this.speed; this.facingRight = true; }
+      else { this.vx *= 0.75; if (Math.abs(this.vx) < 0.5) this.vx = 0; }
+    }
+
+    if (keys.jumpJustPressed) {
+      if (this.onGround || this.coyoteTime > 0) this._doJump();
+      else if (this.canDoubleJump) {
+        this.vy = this.jumpForce * 0.9;
+        this.canDoubleJump = false;
+        engine.particles.burst(this.x + this.w / 2, this.y + this.h, 'doublejump');
+      } else { this.jumpBuffer = 8; }
+    }
+
+    if (keys.dashJustPressed && !this.isDashing && this.dashCooldown <= 0) {
+      this._startDash();
+      engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'smoke');
+    }
+
+    if (keys.lightJustPressed && this.attackCooldown <= 0 && !this.isDashing) this._attack('light', engine);
+    if (keys.heavyJustPressed && this.attackCooldown <= 0 && !this.isDashing) this._attack('heavy', engine);
+    if (keys.specialJustPressed && this.sp >= 30 && !this.isDashing) this._attack('special', engine);
+  }
+
+  _doJump() {
+    this.vy = this.jumpForce;
+    this.coyoteTime = 0;
+    this.jumpBuffer = 0;
+  }
+
+  _startDash() {
+    this.isDashing = true;
+    this.dashTimer = 14;
+    this.dashIframes = 20;
+    this.dashCooldown = this.hasShadowStep ? 32 : 55;
+    this.dashDir = this.facingRight ? 1 : -1;
+    this.vx = this.dashDir * 17;
+    this.vy = 0;
+    this.hitEnemiesThisSwing = new Set();
+  }
+
+  _attack(type, engine) {
+    this.hitEnemiesThisSwing = new Set();
+    this.attackType = type;
+
+    if (type === 'light') {
+      this.attackTimer = 18;
+      this.attackCooldown = Math.floor(22 / this.attackSpeed);
+      this.state = 'attacking_light';
+    } else if (type === 'heavy') {
+      this.attackTimer = 34;
+      this.attackCooldown = Math.floor(42 / this.attackSpeed);
+      this.state = 'attacking_heavy';
+      this.vx = 0;
+      engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'heavy_slash');
+    } else if (type === 'special') {
+      this.sp -= 30;
+      this.attackTimer = 42;
+      this.attackCooldown = 72;
+      this.state = 'attacking_special';
+      this.vx = 0;
+      engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'dark_aura');
+      engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'dark_aura2');
+      engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'sparks');
+    }
+  }
+
+  getAttackHitbox() {
+    if (this.attackTimer <= 0 || !this.attackType) return null;
+    const dir = this.facingRight ? 1 : -1;
+    const cx = this.x + this.w / 2;
+
+    if (this.attackType === 'light') {
+      if (this.attackTimer < 5 || this.attackTimer > 15) return null;
+      const range = 72 * this.attackRange;
+      return {
+        x: this.facingRight ? this.x + this.w - 4 : this.x - range + 4,
+        y: this.y + 4,
+        w: range, h: 56,
+        damage: Math.floor(this.damage * this._comboMult()),
+        type: 'light', knockback: 5 * dir
+      };
+    }
+    if (this.attackType === 'heavy') {
+      if (this.attackTimer > 28 || this.attackTimer < 6) return null;
+      const range = 95 * this.attackRange;
+      return {
+        x: cx - range / 2,
+        y: this.y - 14,
+        w: range, h: 90,
+        damage: Math.floor(this.damage * 2.6 * this._comboMult()),
+        type: 'heavy', knockback: 11 * dir
+      };
+    }
+    if (this.attackType === 'special') {
+      if (this.attackTimer > 38 || this.attackTimer < 5) return null;
+      return {
+        x: cx - 130, y: this.y - 90,
+        w: 260, h: 190,
+        damage: Math.floor(this.damage * 4.2 * this._comboMult()),
+        type: 'special', knockback: 16 * dir
+      };
+    }
+    return null;
+  }
+
+  _comboMult() {
+    const base = this.hasComboMastery ? 0.16 : 0.08;
+    const lowHpBonus = (this.hasReapersFury && this.hp / this.maxHp < 0.3) ? 0.2 : 0;
+    return 1 + Math.min(this.combo * base, 2) + lowHpBonus;
+  }
+
+  takeDamage(amount, engine, source) {
+    if (this.dashIframes > 0) return;
+    if (this.hurtTimer > 0) return;
+    if (this.state === 'dead') return;
+
+    this.hp = Math.max(0, this.hp - amount);
+    this.hurtTimer = 55;
+    if (source !== 'fall') { this.vx = (this.facingRight ? -1 : 1) * 8; this.vy = -7; }
+    if (engine) engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'player_hurt');
+    if (this.hp <= 0) { this.state = 'dead'; this.deathTimer = 120; }
+    else this.state = 'hurt';
+  }
+
+  registerHit(enemy) {
+    this.combo++;
+    this.comboTimer = 105;
+    this.sp = Math.min(this.maxSp, this.sp + 5);
+    this.score += Math.floor(12 * this._comboMult());
+    if (enemy.dead) {
+      this.kills++;
+      this.score += 60;
+      if (this.hasVoidHunger) this.hp = Math.min(this.maxHp, this.hp + 6);
+    }
+  }
+
+  applyUpgrade(upg) {
+    switch (upg.id) {
+      case 'soul_harvest': this.hp = Math.min(this.maxHp, this.hp + Math.floor(this.maxHp * 0.2)); break;
+      case 'deaths_touch': this.damage = Math.floor(this.damage * 1.15); break;
+      case 'spectral_speed': this.speed = Math.min(this.speed * 1.2, 11); break;
+      case 'reapers_reach': this.attackRange *= 1.3; break;
+      case 'grim_resilience': this.maxHp = Math.floor(this.maxHp * 1.25); this.hp = Math.min(this.maxHp, this.hp + 25); break;
+      case 'void_hunger': this.hasVoidHunger = true; break;
+      case 'combo_mastery': this.hasComboMastery = true; break;
+      case 'shadow_step': this.hasShadowStep = true; break;
+      case 'attack_speed': this.attackSpeed = Math.min(this.attackSpeed * 1.3, 2.5); break;
+      case 'soul_barrier': this.maxHp = Math.floor(this.maxHp * 1.1); this.maxSp = Math.floor(this.maxSp * 1.15); this.hp = Math.min(this.maxHp, this.hp + 15); this.sp = Math.min(this.maxSp, this.sp + 20); break;
+      case 'lurkers_bane': this.hasLurkersBane = true; break;
+      case 'reapers_fury': this.hasReapersFury = true; break;
+    }
+  }
+
+  _updateTimers() {
+    if (this.attackTimer > 0) this.attackTimer--;
+    if (this.attackCooldown > 0) this.attackCooldown--;
+    if (this.dashCooldown > 0) this.dashCooldown--;
+    if (this.hurtTimer > 0) this.hurtTimer--;
+    if (this.comboTimer > 0) { this.comboTimer--; if (this.comboTimer <= 0) this.combo = 0; }
+    if (this.isDashing) {
+      this.dashTimer--;
+      if (this.dashIframes > 0) this.dashIframes--;
+      if (this.dashTimer <= 0) { this.isDashing = false; this.vx = 0; }
+    }
+    this.spRegenTimer++;
+    if (this.spRegenTimer >= 95) { this.spRegenTimer = 0; this.sp = Math.min(this.maxSp, this.sp + 3); }
+    if (this.state === 'dead' && this.deathTimer > 0) this.deathTimer--;
+  }
+
+  _updateState() {
+    if (this.state === 'dead') return;
+    if (this.hurtTimer > 44) { this.state = 'hurt'; return; }
+    if (this.isDashing) { this.state = 'dashing'; return; }
+    if (this.attackTimer > 0) return;
+    if (!this.onGround) this.state = this.vy < 0 ? 'jumping' : 'falling';
+    else this.state = Math.abs(this.vx) > 0.5 ? 'running' : 'idle';
+  }
+}
+
+// ─── Base Enemy ─────────────────────────────────────────────────────────────
+
+class Enemy {
+  constructor(x, y, config) {
+    this.x = x; this.y = y;
+    this.w = config.w || 40; this.h = config.h || 65;
+    this.vx = 0; this.vy = 0;
+    this.maxHp = config.hp; this.hp = config.hp;
+    this.speed = config.speed || 2;
+    this.damage = config.damage || 12;
+    this.detectionRange = config.detectionRange || 450;
+    this.attackRange = config.attackRange || 55;
+    this.attackCooldown = 0;
+    this.hurtTimer = 0;
+    this.knockTimer = 0;
+    this.state = 'patrol';
+    this.facingRight = true;
+    this.onGround = false;
+    this.dead = false;
+    this.patrolDir = Math.random() < 0.5 ? 1 : -1;
+    this.patrolTimer = 60;
+    this.type = config.type;
+    this.scoreValue = config.score || 25;
+    this.poisonTimer = 0;
+    this.animFrame = 0;
+    this.animTimer = 0;
+    this.phase = 1;
+  }
+
+  update(player, platforms, engine) {
+    if (this.dead) return;
+
+    // Poison damage
+    if (this.poisonTimer > 0) {
+      this.poisonTimer--;
+      if (this.poisonTimer % 60 === 0) {
+        this.hp -= 5;
+        engine.particles.burst(this.x + this.w / 2, this.y, 'void_hit');
+        if (this.hp <= 0) this._die(engine);
+      }
+    }
+
+    this.vy += GRAVITY;
+    if (this.vy > MAX_FALL) this.vy = MAX_FALL;
+    this.x += this.vx;
+    this.y += this.vy;
+
+    this.onGround = false;
+    for (const p of platforms) {
+      const prevBottom = this.y + this.h - this.vy;
+      if (
+        this.x + this.w > p.x && this.x < p.x + p.w &&
+        this.y + this.h >= p.y && prevBottom <= p.y + 4 && this.vy >= 0
+      ) {
+        this.y = p.y - this.h;
+        this.vy = 0;
+        this.onGround = true;
+      }
+    }
+
+    if (this.x < 20) { this.x = 20; this.patrolDir = 1; }
+    if (this.x + this.w > engine.W - 20) { this.x = engine.W - this.w - 20; this.patrolDir = -1; }
+    if (this.y > engine.H + 100) { this.dead = true; }
+
+    if (this.knockTimer > 0) { this.knockTimer--; }
+    else this.ai(player, engine);
+
+    if (this.attackCooldown > 0) this.attackCooldown--;
+    if (this.hurtTimer > 0) this.hurtTimer--;
+
+    this.animTimer++;
+    if (this.animTimer >= 8) { this.animTimer = 0; this.animFrame++; }
+  }
+
+  ai(player, engine) { /* override */ }
+
+  takeDamage(amount, kbX, engine, hasLurkersBane) {
+    if (this.hurtTimer > 0 && this.type !== 'boss') return false;
+    this.hp -= amount;
+    this.hurtTimer = 6;
+    this.knockTimer = 10;
+    if (kbX !== 0) { this.vx = kbX; this.vy = -5; }
+    if (hasLurkersBane) this.poisonTimer = Math.max(this.poisonTimer, 300);
+    if (this.hp <= 0) this._die(engine);
+    return true;
+  }
+
+  _die(engine) {
+    this.hp = 0;
+    this.dead = true;
+    engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'death');
+    engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'sparks');
+  }
+
+  _distToPlayer(player) {
+    const dx = (player.x + player.w / 2) - (this.x + this.w / 2);
+    const dy = (player.y + player.h / 2) - (this.y + this.h / 2);
+    return { dx, dy, dist: Math.hypot(dx, dy) };
+  }
+}
+
+// ─── Shadow Demon ────────────────────────────────────────────────────────────
+
+export class ShadowDemon extends Enemy {
+  constructor(x, y, scale = 1) {
+    super(x, y, {
+      w: 40, h: 62,
+      hp: Math.floor(50 * scale),
+      speed: 2.2 + scale * 0.4,
+      damage: Math.floor(12 * scale),
+      attackRange: 52,
+      type: 'shadow_demon',
+      score: 25
+    });
+  }
+
+  ai(player, engine) {
+    const { dx, dy, dist } = this._distToPlayer(player);
+    if (dist < this.detectionRange) {
+      this.facingRight = dx > 0;
+      if (dist > this.attackRange + 10) {
+        this.vx = (dx > 0 ? 1 : -1) * this.speed;
+      } else {
+        this.vx *= 0.7;
+        if (this.attackCooldown <= 0 && Math.abs(dy) < 80) {
+          this.attackCooldown = 90;
+          engine.dealEnemyDamage(player, this.damage, engine);
+          engine.particles.burst(player.x + player.w / 2, player.y + player.h / 2, 'void_hit');
+        }
+      }
+    } else {
+      this.vx = this.patrolDir * (this.speed * 0.5);
+      this.patrolTimer--;
+      if (this.patrolTimer <= 0) { this.patrolTimer = 80 + Math.floor(Math.random() * 60); this.patrolDir *= -1; }
+    }
+  }
+}
+
+// ─── Void Sprite ─────────────────────────────────────────────────────────────
+
+export class VoidSprite extends Enemy {
+  constructor(x, y, scale = 1) {
+    super(x, y, {
+      w: 28, h: 28,
+      hp: Math.floor(25 * scale),
+      speed: 3.5 + scale * 0.5,
+      damage: Math.floor(8 * scale),
+      attackRange: 35,
+      type: 'void_sprite',
+      score: 15
+    });
+    this.floatTimer = Math.random() * Math.PI * 2;
+    this.baseY = y;
+  }
+
+  update(player, platforms, engine) {
+    if (this.dead) return;
+    if (this.poisonTimer > 0) {
+      this.poisonTimer--;
+      if (this.poisonTimer % 60 === 0) { this.hp -= 5; if (this.hp <= 0) { this._die(engine); return; } }
+    }
+    // Floating enemy - no gravity
+    this.floatTimer += 0.06;
+    this.x += this.vx;
+    this.y += this.vy;
+    if (this.x < 20) { this.x = 20; this.patrolDir = 1; }
+    if (this.x + this.w > engine.W - 20) { this.x = engine.W - this.w - 20; this.patrolDir = -1; }
+    if (this.knockTimer > 0) { this.knockTimer--; }
+    else this.ai(player, engine);
+    if (this.attackCooldown > 0) this.attackCooldown--;
+    if (this.hurtTimer > 0) this.hurtTimer--;
+    this.animTimer++;
+    if (this.animTimer >= 6) { this.animTimer = 0; this.animFrame++; }
+  }
+
+  ai(player, engine) {
+    const { dx, dy, dist } = this._distToPlayer(player);
+    if (dist < 500) {
+      this.facingRight = dx > 0;
+      const tx = player.x + player.w / 2 - this.w / 2;
+      const ty = player.y - 20 + Math.sin(this.floatTimer) * 30;
+      this.vx += (tx - this.x) * 0.04;
+      this.vy += (ty - this.y) * 0.04;
+      const maxSpd = this.speed;
+      const spd = Math.hypot(this.vx, this.vy);
+      if (spd > maxSpd) { this.vx = (this.vx / spd) * maxSpd; this.vy = (this.vy / spd) * maxSpd; }
+      if (dist < this.attackRange && this.attackCooldown <= 0) {
+        this.attackCooldown = 60;
+        engine.dealEnemyDamage(player, this.damage, engine);
+      }
+    } else {
+      this.vx *= 0.9; this.vy *= 0.9;
+    }
+  }
+}
+
+// ─── Dimension Watcher ───────────────────────────────────────────────────────
+
+export class DimensionWatcher extends Enemy {
+  constructor(x, y, scale = 1) {
+    super(x, y, {
+      w: 44, h: 44,
+      hp: Math.floor(65 * scale),
+      speed: 1.2,
+      damage: Math.floor(14 * scale),
+      attackRange: 380,
+      detectionRange: 500,
+      type: 'dimension_watcher',
+      score: 35
+    });
+    this.floatOffset = Math.random() * Math.PI * 2;
+  }
+
+  update(player, platforms, engine) {
+    if (this.dead) return;
+    if (this.poisonTimer > 0) {
+      this.poisonTimer--;
+      if (this.poisonTimer % 60 === 0) { this.hp -= 5; if (this.hp <= 0) { this._die(engine); return; } }
+    }
+    this.floatOffset += 0.04;
+    this.vy = Math.sin(this.floatOffset) * 0.5;
+    this.x += this.vx;
+    this.y += this.vy;
+    if (this.x < 20) { this.x = 20; this.patrolDir = 1; }
+    if (this.x + this.w > engine.W - 20) { this.x = engine.W - this.w - 20; this.patrolDir = -1; }
+    this.ai(player, engine);
+    if (this.attackCooldown > 0) this.attackCooldown--;
+    if (this.hurtTimer > 0) this.hurtTimer--;
+    if (this.knockTimer > 0) this.knockTimer--;
+    this.animTimer++;
+    if (this.animTimer >= 8) { this.animTimer = 0; this.animFrame++; }
+  }
+
+  ai(player, engine) {
+    const { dx, dy, dist } = this._distToPlayer(player);
+    this.facingRight = dx > 0;
+    if (dist < this.detectionRange) {
+      // Move slowly toward player
+      this.vx += (dx > 0 ? 0.05 : -0.05);
+      if (Math.abs(this.vx) > this.speed) this.vx = Math.sign(this.vx) * this.speed;
+
+      // Fire projectile
+      if (dist < this.attackRange && this.attackCooldown <= 0) {
+        this.attackCooldown = 130;
+        const angle = Math.atan2(dy, dx);
+        engine.addProjectile({
+          x: this.x + this.w / 2, y: this.y + this.h / 2,
+          vx: Math.cos(angle) * 5.5, vy: Math.sin(angle) * 5.5,
+          damage: this.damage, owner: 'enemy',
+          life: 90, color: '#a855f7', size: 8,
+          glow: '#7c3aed'
+        });
+      }
+    } else {
+      this.vx *= 0.9;
+    }
+  }
+}
+
+// ─── Lurker Cultist ──────────────────────────────────────────────────────────
+
+export class LurkerCultist extends Enemy {
+  constructor(x, y, scale = 1) {
+    super(x, y, {
+      w: 36, h: 68,
+      hp: Math.floor(85 * scale),
+      speed: 2.8 + scale * 0.3,
+      damage: Math.floor(18 * scale),
+      attackRange: 58,
+      type: 'lurker_cultist',
+      score: 50
+    });
+    this.teleportCooldown = 180 + Math.floor(Math.random() * 120);
+  }
+
+  ai(player, engine) {
+    const { dx, dy, dist } = this._distToPlayer(player);
+    this.facingRight = dx > 0;
+
+    // Teleport mechanic
+    this.teleportCooldown--;
+    if (this.teleportCooldown <= 0 && dist > 150) {
+      this.teleportCooldown = 200;
+      // Appear near player
+      const side = Math.random() < 0.5 ? -1 : 1;
+      this.x = player.x + side * 120;
+      this.y = player.y - 80;
+      this.y = Math.max(50, Math.min(this.y, engine.H - 200));
+      engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'smoke');
+      engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'dark_aura');
+      return;
+    }
+
+    if (dist < this.detectionRange) {
+      this.vx = (dx > 0 ? 1 : -1) * this.speed;
+      if (dist < this.attackRange && Math.abs(dy) < 90 && this.attackCooldown <= 0) {
+        this.attackCooldown = 75;
+        engine.dealEnemyDamage(player, this.damage, engine);
+        engine.particles.burst(player.x + player.w / 2, player.y + player.h / 2, 'void_hit');
+      }
+    } else {
+      this.vx *= 0.85;
+    }
+  }
+}
+
+// ─── Boss Servant ────────────────────────────────────────────────────────────
+
+export class BossServant extends Enemy {
+  constructor(x, y, scale = 1) {
+    super(x, y, {
+      w: 80, h: 110,
+      hp: Math.floor(600 * scale),
+      speed: 2,
+      damage: Math.floor(22 * scale),
+      attackRange: 100,
+      detectionRange: 9999,
+      type: 'boss',
+      score: 500
+    });
+    this.phase = 1;
+    this.specialCooldown = 240;
+    this.chargeTimer = 0;
+    this.isCharging = false;
+    this.chargeDir = 1;
+    this.floatOffset = 0;
+  }
+
+  ai(player, engine) {
+    const { dx, dy, dist } = this._distToPlayer(player);
+    this.facingRight = dx > 0;
+
+    // Phase 2 at 50% HP
+    if (this.hp < this.maxHp * 0.5 && this.phase === 1) {
+      this.phase = 2;
+      this.speed *= 1.5;
+      this.damage = Math.floor(this.damage * 1.3);
+      engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'boss_hit');
+      engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'dark_aura');
+    }
+
+    this.specialCooldown--;
+    this.floatOffset += 0.03;
+
+    if (this.isCharging) {
+      this.vx = this.chargeDir * 18;
+      this.chargeTimer--;
+      if (this.chargeTimer <= 0) { this.isCharging = false; this.vx = 0; }
+      // Charge damage
+      if (Math.abs(dist) < this.attackRange + 30 && this.attackCooldown <= 0) {
+        this.attackCooldown = 30;
+        engine.dealEnemyDamage(player, this.damage * 1.5, engine);
+      }
+      return;
+    }
+
+    // Special attack: summon homing projectiles
+    if (this.specialCooldown <= 0) {
+      this.specialCooldown = this.phase === 2 ? 180 : 280;
+      const angles = this.phase === 2 ? 6 : 4;
+      for (let i = 0; i < angles; i++) {
+        const a = (Math.PI * 2 * i) / angles;
+        engine.addProjectile({
+          x: this.x + this.w / 2, y: this.y + this.h / 2,
+          vx: Math.cos(a) * 4, vy: Math.sin(a) * 4,
+          damage: this.damage, owner: 'enemy',
+          life: 80, color: '#ff3366', size: 11, glow: '#ff6600'
+        });
+      }
+      engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'boss_hit');
+    }
+
+    // Charge attack every so often
+    if (dist < 350 && dist > 100 && this.attackCooldown <= 0) {
+      if (Math.random() < (this.phase === 2 ? 0.012 : 0.006)) {
+        this.isCharging = true;
+        this.chargeTimer = 22;
+        this.chargeDir = dx > 0 ? 1 : -1;
+        this.attackCooldown = 50;
+        engine.particles.burst(this.x + this.w / 2, this.y, 'sparks');
+        return;
+      }
+    }
+
+    // Normal approach
+    if (dist > this.attackRange + 20) {
+      this.vx += (dx > 0 ? 1 : -1) * 0.25;
+      if (Math.abs(this.vx) > this.speed) this.vx = Math.sign(this.vx) * this.speed;
+      this.vy += Math.sin(this.floatOffset) * 0.08;
+    } else {
+      this.vx *= 0.85;
+      if (this.attackCooldown <= 0 && Math.abs(dy) < 120) {
+        this.attackCooldown = 55;
+        engine.dealEnemyDamage(player, this.damage, engine);
+        engine.particles.burst(player.x + player.w / 2, player.y + player.h / 2, 'boss_hit');
+      }
+    }
+  }
+}

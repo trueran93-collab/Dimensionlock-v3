@@ -5,68 +5,75 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List
+from pydantic import BaseModel, Field
+from typing import List, Optional, Annotated
+from bson import ObjectId
 import uuid
 from datetime import datetime, timezone
-
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# Create the main app without a prefix
-app = FastAPI()
-
-# Create a router with the /api prefix
+app = FastAPI(title="Dimensionlock: The Endless API")
 api_router = APIRouter(prefix="/api")
 
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-# Define Models
-class StatusCheck(BaseModel):
-    model_config = ConfigDict(extra="ignore")  # Ignore MongoDB's _id field
-    
+
+# ─── Models ─────────────────────────────────────────────────────────────────
+
+class ScoreSubmit(BaseModel):
+    player_name: str
+    score: int
+    floor: int
+    kills: int
+
+
+class ScoreRecord(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    player_name: str
+    score: int
+    floor: int
+    kills: int
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
-class StatusCheckCreate(BaseModel):
-    client_name: str
 
-# Add your routes to the router instead of directly to app
+# ─── Routes ─────────────────────────────────────────────────────────────────
+
 @api_router.get("/")
 async def root():
-    return {"message": "Hello World"}
+    return {"message": "Dimensionlock: The Endless API", "status": "ok"}
 
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.model_dump()
-    status_obj = StatusCheck(**status_dict)
-    
-    # Convert to dict and serialize datetime to ISO string for MongoDB
-    doc = status_obj.model_dump()
-    doc['timestamp'] = doc['timestamp'].isoformat()
-    
-    _ = await db.status_checks.insert_one(doc)
-    return status_obj
 
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    # Exclude MongoDB's _id field from the query results
-    status_checks = await db.status_checks.find({}, {"_id": 0}).to_list(1000)
-    
-    # Convert ISO string timestamps back to datetime objects
-    for check in status_checks:
-        if isinstance(check['timestamp'], str):
-            check['timestamp'] = datetime.fromisoformat(check['timestamp'])
-    
-    return status_checks
+@api_router.post("/scores", response_model=ScoreRecord)
+async def submit_score(data: ScoreSubmit):
+    record = ScoreRecord(
+        player_name=data.player_name,
+        score=data.score,
+        floor=data.floor,
+        kills=data.kills
+    )
+    doc = record.model_dump()
+    await db.scores.insert_one(doc)
+    return record
 
-# Include the router in the main app
+
+@api_router.get("/scores/top", response_model=List[ScoreRecord])
+async def get_top_scores():
+    docs = await db.scores.find({}, {"_id": 0}).sort("score", -1).limit(10).to_list(10)
+    return [ScoreRecord(**d) for d in docs]
+
+
+@api_router.get("/health")
+async def health():
+    return {"status": "healthy", "game": "Dimensionlock: The Endless"}
+
+
 app.include_router(api_router)
 
 app.add_middleware(
@@ -77,12 +84,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

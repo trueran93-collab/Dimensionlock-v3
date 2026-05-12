@@ -1,52 +1,58 @@
-import { useEffect } from "react";
-import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
+import React, { useState, useCallback } from 'react';
+import MainMenu from './components/MainMenu.jsx';
+import GameCanvas from './components/GameCanvas.jsx';
+import GameOver from './components/GameOver.jsx';
+import './App.css';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+// App screen states: 'menu' | 'playing' | 'game_over'
 
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
+function App() {
+  const [screen, setScreen] = useState('menu');
+  const [gameResult, setGameResult] = useState(null);
+  const [gameKey, setGameKey] = useState(0);
 
-  useEffect(() => {
-    helloWorldApi();
+  const handlePlay = useCallback(() => {
+    setScreen('playing');
+  }, []);
+
+  const handleGameOver = useCallback((result) => {
+    setGameResult(result);
+    setScreen('game_over');
+  }, []);
+
+  const handleRestart = useCallback(() => {
+    setGameKey(k => k + 1);
+    setScreen('playing');
+  }, []);
+
+  const handleMenu = useCallback(() => {
+    setScreen('menu');
+    setGameResult(null);
   }, []);
 
   return (
-    <div>
-      <header className="App-header">
-        <a
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
-    </div>
-  );
-};
+    <div style={{ margin: 0, padding: 0, background: '#0a0a0f', minHeight: '100vh', overflow: 'hidden' }}>
+      {screen === 'menu' && (
+        <MainMenu onPlay={handlePlay} />
+      )}
 
-function App() {
-  return (
-    <div className="App">
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
+      {screen === 'playing' && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#0a0a0f' }}>
+          <GameCanvas
+            key={gameKey}
+            onGameOver={handleGameOver}
+            onReturnToMenu={handleMenu}
+          />
+        </div>
+      )}
+
+      {screen === 'game_over' && (
+        <GameOver
+          result={gameResult}
+          onRestart={handleRestart}
+          onMenu={handleMenu}
+        />
+      )}
     </div>
   );
 }

@@ -1,34 +1,72 @@
-.App-logo {
-    height: 40vmin;
-    pointer-events: none;
+/* Dimensionlock: The Endless - Game Styles */
+
+* {
+  box-sizing: border-box;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-    .App-logo {
-        animation: App-logo-spin infinite 20s linear;
-    }
+#root {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: #0a0a0f;
 }
 
-.App-header {
-    background-color: #0f0f10;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    font-size: calc(10px + 2vmin);
-    color: white;
+canvas {
+  display: block;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
 }
 
-.App-link {
-    color: #61dafb;
+button {
+  cursor: pointer;
 }
 
-@keyframes App-logo-spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
+/* Glow text utility */
+.glow-purple {
+  text-shadow: 0 0 15px #a855f7, 0 0 30px #7c3aed;
+}
+
+.glow-teal {
+  text-shadow: 0 0 15px #00ffcc, 0 0 30px #00ffcc44;
+}
+
+.glow-red {
+  text-shadow: 0 0 15px #ff3366, 0 0 30px #ff000044;
+}
+
+/* Animations */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 10px #7c3aed; }
+  50% { box-shadow: 0 0 25px #a855f7, 0 0 50px #7c3aed; }
+}
+
+@keyframes float-up {
+  from { transform: translateY(0px); opacity: 1; }
+  to { transform: translateY(-40px); opacity: 0; }
+}
+
+@keyframes combo-pop {
+  0% { transform: translate(-50%, -60%) scale(0.8); }
+  30% { transform: translate(-50%, -60%) scale(1.15); }
+  100% { transform: translate(-50%, -60%) scale(1); }
+}
+
+@keyframes slide-in-left {
+  from { transform: translateX(-30px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slide-in-right {
+  from { transform: translateX(30px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes fade-in-up {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes blink-cursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }
