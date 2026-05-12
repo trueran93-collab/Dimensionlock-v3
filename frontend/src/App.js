@@ -1,17 +1,38 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
+import IntroCinematic from './components/IntroCinematic.jsx';
 import MainMenu from './components/MainMenu.jsx';
 import GameCanvas from './components/GameCanvas.jsx';
 import GameOver from './components/GameOver.jsx';
+import { soundEngine } from './game/sound.js';
 import './App.css';
 
-// App screen states: 'menu' | 'playing' | 'game_over'
+// Screens: 'intro' | 'menu' | 'playing' | 'game_over'
 
 function App() {
-  const [screen, setScreen] = useState('menu');
+  const [screen, setScreen] = useState('intro');
   const [gameResult, setGameResult] = useState(null);
   const [gameKey, setGameKey] = useState(0);
 
+  // Init audio on first user interaction
+  const initAudio = useCallback(() => {
+    soundEngine.init();
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener('click', initAudio, { once: true });
+    window.addEventListener('keydown', initAudio, { once: true });
+    return () => {
+      window.removeEventListener('click', initAudio);
+      window.removeEventListener('keydown', initAudio);
+    };
+  }, [initAudio]);
+
+  const handleIntroComplete = useCallback(() => {
+    setScreen('menu');
+  }, []);
+
   const handlePlay = useCallback(() => {
+    soundEngine.init();
     setScreen('playing');
   }, []);
 
@@ -31,13 +52,21 @@ function App() {
   }, []);
 
   return (
-    <div style={{ margin: 0, padding: 0, background: '#0a0a0f', minHeight: '100vh', overflow: 'hidden' }}>
+    <div style={{ margin: 0, padding: 0, background: '#04020e', minHeight: '100vh', overflow: 'hidden' }}>
+      {screen === 'intro' && (
+        <IntroCinematic onComplete={handleIntroComplete} />
+      )}
+
       {screen === 'menu' && (
         <MainMenu onPlay={handlePlay} />
       )}
 
       {screen === 'playing' && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#0a0a0f' }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          minHeight: '100vh', background: '#04020e',
+          position: 'relative'
+        }}>
           <GameCanvas
             key={gameKey}
             onGameOver={handleGameOver}

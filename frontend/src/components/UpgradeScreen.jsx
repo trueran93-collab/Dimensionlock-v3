@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { soundEngine } from '../game/sound.js';
 
 const RARITY_COLORS = {
   common: '#9ca3af',
@@ -23,6 +24,7 @@ export default function UpgradeScreen({ options, floor, onSelect }) {
 
   const handleSelect = (idx) => {
     setSelectedIdx(idx);
+    soundEngine.playUpgradeSelect();
     setTimeout(() => onSelect(options[idx].id), 400);
   };
 

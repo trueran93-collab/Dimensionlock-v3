@@ -3,16 +3,44 @@ import { GameEngine } from '../game/engine.js';
 import { getRandomUpgrades } from '../game/upgrades.js';
 import UpgradeScreen from './UpgradeScreen.jsx';
 import BossWarning from './BossWarning.jsx';
+import MobileControls from './MobileControls.jsx';
+
+const useIsTouch = () => {
+  const [isTouch, setIsTouch] = useState(false);
+  useEffect(() => {
+    const check = () => {
+      const hasTouch = ('ontouchstart' in window) ||
+        (navigator.maxTouchPoints && navigator.maxTouchPoints > 0) ||
+        window.matchMedia('(pointer: coarse)').matches;
+      const smallScreen = window.innerWidth <= 900;
+      setIsTouch(!!(hasTouch || smallScreen));
+    };
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+  return isTouch;
+};
 
 export default function GameCanvas({ onGameOver, onReturnToMenu }) {
   const canvasRef = useRef(null);
   const engineRef = useRef(null);
+  const isTouch = useIsTouch();
 
-  const [stats, setStats] = useState({ hp: 100, maxHp: 100, sp: 100, maxSp: 100, combo: 0, floor: 1, score: 0, wave: 1, maxWaves: 3 });
+  const [stats, setStats] = useState({
+    hp: 100, maxHp: 100, sp: 100, maxSp: 100,
+    combo: 0, floor: 1, score: 0, wave: 1, maxWaves: 3,
+    ultimateCharge: 0, maxUltimateCharge: 100,
+    ultimateActive: false, dashCooldown: 0, spReady: true
+  });
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [showBossWarning, setShowBossWarning] = useState(false);
   const [upgradeOptions, setUpgradeOptions] = useState([]);
   const [usedUpgrades, setUsedUpgrades] = useState([]);
+  const [mobileControlsOn, setMobileControlsOn] = useState(false);
+
+  // Sync default visibility once isTouch is detected
+  useEffect(() => { setMobileControlsOn(isTouch); }, [isTouch]);
 
   const handleFloorClear = useCallback((floor) => {
     const options = getRandomUpgrades(3, usedUpgrades);
@@ -57,18 +85,26 @@ export default function GameCanvas({ onGameOver, onReturnToMenu }) {
 
   const hpPct = Math.max(0, (stats.hp / stats.maxHp) * 100);
   const spPct = Math.max(0, (stats.sp / stats.maxSp) * 100);
+  const ultPct = Math.max(0, (stats.ultimateCharge / stats.maxUltimateCharge) * 100);
   const hpColor = hpPct > 50 ? '#a855f7' : hpPct > 25 ? '#f59e0b' : '#ff3366';
 
   return (
     <div
       data-testid="game-canvas-container"
-      style={{ position: 'relative', width: '100%', maxWidth: '1280px', margin: '0 auto', background: '#0a0a0f' }}
+      style={{
+        position: 'relative',
+        width: '100%',
+        maxWidth: '1280px',
+        margin: '0 auto',
+        background: '#0a0a0f',
+        touchAction: 'none'
+      }}
     >
       {/* Canvas */}
       <canvas
         ref={canvasRef}
         data-testid="game-canvas"
-        style={{ display: 'block', width: '100%', imageRendering: 'pixelated' }}
+        style={{ display: 'block', width: '100%', height: 'auto', touchAction: 'none' }}
       />
 
       {/* HUD */}
@@ -80,12 +116,12 @@ export default function GameCanvas({ onGameOver, onReturnToMenu }) {
             pointerEvents: 'none', fontFamily: "'JetBrains Mono', monospace"
           }}
         >
-          {/* Top-left: HP / SP bars */}
-          <div style={{ position: 'absolute', top: 16, left: 16 }}>
+          {/* Top-left: HP / SP / Ult bars */}
+          <div style={{ position: 'absolute', top: 12, left: 12 }}>
             {/* HP Bar */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-              <span style={{ color: '#ff3366', fontSize: 12, minWidth: 24, textShadow: '0 0 8px #ff3366' }}>HP</span>
-              <div style={{ width: 160, height: 12, background: '#1a0a2e', border: '1px solid #7c3aed55' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+              <span style={{ color: '#ff3366', fontSize: 11, minWidth: 22, textShadow: '0 0 8px #ff3366' }}>HP</span>
+              <div style={{ width: 150, height: 11, background: '#1a0a2e', border: '1px solid #7c3aed55' }}>
                 <div
                   data-testid="hp-bar"
                   style={{
@@ -94,12 +130,12 @@ export default function GameCanvas({ onGameOver, onReturnToMenu }) {
                   }}
                 />
               </div>
-              <span style={{ color: '#fff', fontSize: 11 }}>{stats.hp}/{stats.maxHp}</span>
+              <span style={{ color: '#fff', fontSize: 10 }}>{stats.hp}/{stats.maxHp}</span>
             </div>
             {/* SP Bar */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ color: '#00ffcc', fontSize: 12, minWidth: 24, textShadow: '0 0 8px #00ffcc' }}>SP</span>
-              <div style={{ width: 160, height: 8, background: '#1a0a2e', border: '1px solid #7c3aed33' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+              <span style={{ color: '#00ffcc', fontSize: 11, minWidth: 22, textShadow: '0 0 8px #00ffcc' }}>SP</span>
+              <div style={{ width: 150, height: 8, background: '#1a0a2e', border: '1px solid #7c3aed33' }}>
                 <div
                   data-testid="sp-bar"
                   style={{
@@ -110,17 +146,55 @@ export default function GameCanvas({ onGameOver, onReturnToMenu }) {
               </div>
               <span style={{ color: '#888', fontSize: 10 }}>{Math.floor(stats.sp)}/{stats.maxSp}</span>
             </div>
+            {/* Ultimate Charge Bar */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{
+                color: ultPct >= 100 ? '#fbbf24' : '#c084fc',
+                fontSize: 11, minWidth: 22,
+                textShadow: ultPct >= 100 ? '0 0 12px #fbbf24' : '0 0 8px #a855f7'
+              }}>ULT</span>
+              <div
+                style={{
+                  width: 150, height: 10,
+                  background: '#1a0a2e',
+                  border: `1px solid ${ultPct >= 100 ? '#fbbf24' : '#7c3aed55'}`,
+                  position: 'relative', overflow: 'hidden'
+                }}
+              >
+                <div
+                  data-testid="ultimate-bar"
+                  style={{
+                    height: '100%',
+                    width: `${ultPct}%`,
+                    background: ultPct >= 100
+                      ? 'linear-gradient(90deg, #fbbf24, #ff6600, #fbbf24)'
+                      : 'linear-gradient(90deg, #a855f7, #c084fc)',
+                    boxShadow: ultPct >= 100 ? '0 0 14px #fbbf24' : '0 0 6px #a855f7',
+                    transition: 'width 0.2s',
+                    backgroundSize: '200% 100%',
+                    animation: ultPct >= 100 ? 'ultPulse 1s linear infinite' : 'none'
+                  }}
+                />
+              </div>
+              <span style={{
+                color: ultPct >= 100 ? '#fbbf24' : '#888',
+                fontSize: 10,
+                textShadow: ultPct >= 100 ? '0 0 6px #fbbf24' : 'none'
+              }}>
+                {ultPct >= 100 ? 'READY' : `${Math.floor(ultPct)}%`}
+              </span>
+            </div>
           </div>
 
           {/* Top-right: Floor + Score */}
-          <div style={{ position: 'absolute', top: 16, right: 16, textAlign: 'right' }}>
-            <div data-testid="floor-display" style={{ color: '#00ffcc', fontSize: 14, textShadow: '0 0 10px #00ffcc', marginBottom: 4 }}>
+          <div style={{ position: 'absolute', top: 12, right: 12, textAlign: 'right' }}>
+            <div data-testid="floor-display" style={{ color: '#00ffcc', fontSize: 13, textShadow: '0 0 10px #00ffcc', marginBottom: 3 }}>
               FLOOR {stats.floor}
             </div>
-            <div style={{ color: '#a855f7', fontSize: 11, textShadow: '0 0 8px #a855f7' }}>
+            <div style={{ color: '#a855f7', fontSize: 10, textShadow: '0 0 8px #a855f7' }}>
               WAVE {stats.wave}/{stats.maxWaves}
             </div>
-            <div data-testid="score-display" style={{ color: '#ffffff88', fontSize: 11, marginTop: 4 }}>
+            <div data-testid="score-display" style={{ color: '#ffffff88', fontSize: 10, marginTop: 3 }}>
               SCORE: {stats.score}
             </div>
           </div>
@@ -143,31 +217,63 @@ export default function GameCanvas({ onGameOver, onReturnToMenu }) {
             </div>
           )}
 
-          {/* Controls hint (small, bottom) */}
-          <div style={{
-            position: 'absolute', bottom: 8, left: 16,
-            color: '#ffffff33', fontSize: 10, lineHeight: '1.6'
-          }}>
-            <span>Arrow/WASD: Move</span>
-            <span style={{ marginLeft: 12 }}>Space/W: Jump</span>
-            <span style={{ marginLeft: 12 }}>Shift: Dash</span>
-            <span style={{ marginLeft: 12 }}>J: Light</span>
-            <span style={{ marginLeft: 12 }}>K: Heavy</span>
-            <span style={{ marginLeft: 12 }}>L: Special (30SP)</span>
-          </div>
+          {/* Ultimate active flash */}
+          {stats.ultimateActive && (
+            <div
+              data-testid="ultimate-active"
+              style={{
+                position: 'absolute', top: '20%', left: '50%',
+                transform: 'translateX(-50%)',
+                color: '#fbbf24', fontSize: 28,
+                textShadow: '0 0 30px #fbbf24, 0 0 60px #ff6600',
+                fontWeight: 'bold', letterSpacing: '0.2em',
+                pointerEvents: 'none',
+                fontFamily: "'Cormorant Garamond', serif"
+              }}
+            >
+              SOUL HARVEST
+            </div>
+          )}
 
-          {/* SP warning */}
-          {stats.sp < 30 && (
+          {/* Controls hint (desktop only) */}
+          {!isTouch && (
             <div style={{
-              position: 'absolute', bottom: 28, right: 16,
-              color: '#ff3366', fontSize: 11,
-              textShadow: '0 0 8px #ff3366'
+              position: 'absolute', bottom: 8, left: 16,
+              color: '#ffffff44', fontSize: 10, lineHeight: '1.6'
             }}>
-              LOW SP
+              <span>Move: A/D</span>
+              <span style={{ marginLeft: 10 }}>Jump: W/Space (2x)</span>
+              <span style={{ marginLeft: 10 }}>Dash: Shift</span>
+              <span style={{ marginLeft: 10 }}>J/K: Light/Heavy</span>
+              <span style={{ marginLeft: 10 }}>L: Dark Aura (30SP)</span>
+              <span style={{ marginLeft: 10, color: '#fbbf24' }}>U: Ultimate</span>
             </div>
           )}
         </div>
       )}
+
+      {/* Mobile controls toggle button (top-right, below floor) */}
+      {isTouch && !showUpgrade && !showBossWarning && (
+        <button
+          data-testid="toggle-mobile-controls"
+          onClick={() => setMobileControlsOn(v => !v)}
+          style={{
+            position: 'absolute', top: 12, right: 12,
+            opacity: 0,
+            width: 100, height: 80,
+            background: 'transparent', border: 'none',
+            pointerEvents: 'auto'
+          }}
+          aria-label="Toggle mobile controls"
+        />
+      )}
+
+      {/* Mobile Controls Overlay */}
+      <MobileControls
+        engineRef={engineRef}
+        stats={stats}
+        visible={mobileControlsOn && !showUpgrade && !showBossWarning}
+      />
 
       {/* Upgrade Screen */}
       {showUpgrade && (
@@ -186,6 +292,13 @@ export default function GameCanvas({ onGameOver, onReturnToMenu }) {
           <BossWarning floor={stats.floor} />
         </div>
       )}
+
+      <style>{`
+        @keyframes ultPulse {
+          0%, 100% { background-position: 0% 0%; }
+          50% { background-position: 100% 0%; }
+        }
+      `}</style>
     </div>
   );
 }

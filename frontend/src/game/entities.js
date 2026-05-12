@@ -52,6 +52,17 @@ export class Player {
     // SP
     this.spRegenTimer = 0;
 
+    // Ultimate charge (Soul Reaper's Harvest)
+    this.ultimateCharge = 0;
+    this.maxUltimateCharge = 100;
+    this.ultimateActive = false;
+    this.ultimateTimer = 0;
+    this.ultimateMaxDuration = 150; // ~2.5s @ 60fps
+    this.ultimateHitTicks = 0;
+
+    // Running trail timer
+    this.runTrailTimer = 0;
+
     // Anim
     this.animFrame = 0;
     this.animTimer = 0;
@@ -141,6 +152,31 @@ export class Player {
     if (keys.lightJustPressed && this.attackCooldown <= 0 && !this.isDashing) this._attack('light', engine);
     if (keys.heavyJustPressed && this.attackCooldown <= 0 && !this.isDashing) this._attack('heavy', engine);
     if (keys.specialJustPressed && this.sp >= 30 && !this.isDashing) this._attack('special', engine);
+    if (keys.ultimateJustPressed && this.ultimateCharge >= this.maxUltimateCharge && !this.ultimateActive && !this.isDashing) {
+      this._startUltimate(engine);
+    }
+  }
+
+  _startUltimate(engine) {
+    this.ultimateActive = true;
+    this.ultimateTimer = this.ultimateMaxDuration;
+    this.ultimateCharge = 0;
+    this.ultimateHitTicks = 0;
+    this.hitEnemiesThisSwing = new Set();
+    this.vx = 0;
+    this.dashIframes = this.ultimateMaxDuration; // invincible during ult
+    engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'ultimate_explosion');
+    engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'dark_aura');
+    engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'dark_aura2');
+    engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'sparks');
+    if (engine.sound?.playUltimate) engine.sound.playUltimate();
+    else if (engine.sound?.playSpecialAttack) engine.sound.playSpecialAttack();
+  }
+
+  collectSoulSeed(amount = 10) {
+    this.ultimateCharge = Math.min(this.maxUltimateCharge, this.ultimateCharge + amount);
+    this.sp = Math.min(this.maxSp, this.sp + 4);
+    this.score += 25;
   }
 
   _doJump() {
@@ -187,6 +223,18 @@ export class Player {
   }
 
   getAttackHitbox() {
+    // Ultimate hitbox - large AoE around player every few frames
+    if (this.ultimateActive && this.ultimateTimer > 0) {
+      // Refresh hit set every 12 frames so enemies can be hit repeatedly
+      if (this.ultimateHitTicks % 12 === 0) this.hitEnemiesThisSwing = new Set();
+      return {
+        x: this.x + this.w / 2 - 160,
+        y: this.y + this.h / 2 - 140,
+        w: 320, h: 280,
+        damage: Math.floor(this.damage * 1.6 * this._comboMult()),
+        type: 'ultimate', knockback: 14 * (this.facingRight ? 1 : -1)
+      };
+    }
     if (this.attackTimer <= 0 || !this.attackType) return null;
     const dir = this.facingRight ? 1 : -1;
     const cx = this.x + this.w / 2;
@@ -283,6 +331,16 @@ export class Player {
       this.dashTimer--;
       if (this.dashIframes > 0) this.dashIframes--;
       if (this.dashTimer <= 0) { this.isDashing = false; this.vx = 0; }
+    } else if (this.dashIframes > 0) {
+      this.dashIframes--;
+    }
+    if (this.ultimateActive) {
+      this.ultimateTimer--;
+      this.ultimateHitTicks++;
+      if (this.ultimateTimer <= 0) {
+        this.ultimateActive = false;
+        this.hitEnemiesThisSwing = new Set();
+      }
     }
     this.spRegenTimer++;
     if (this.spRegenTimer >= 95) { this.spRegenTimer = 0; this.sp = Math.min(this.maxSp, this.sp + 3); }
@@ -291,6 +349,7 @@ export class Player {
 
   _updateState() {
     if (this.state === 'dead') return;
+    if (this.ultimateActive) { this.state = 'ultimate'; return; }
     if (this.hurtTimer > 44) { this.state = 'hurt'; return; }
     if (this.isDashing) { this.state = 'dashing'; return; }
     if (this.attackTimer > 0) return;
@@ -695,6 +754,94 @@ export class BossServant extends Enemy {
         engine.dealEnemyDamage(player, this.damage, engine);
         engine.particles.burst(player.x + player.w / 2, player.y + player.h / 2, 'boss_hit');
       }
+    }
+  }
+}
+
+
+// ─── Soul Seed ───────────────────────────────────────────────────────────────
+// Floating collectible that fills ultimate charge
+
+export class SoulSeed {
+  constructor(x, y, value = 10) {
+    this.x = x; this.y = y;
+    this.w = 18; this.h = 18;
+    this.vx = (Math.random() - 0.5) * 3;
+    this.vy = -3 - Math.random() * 2;
+    this.value = value;
+    this.life = 540; // ~9 seconds
+    this.dead = false;
+    this.phase = Math.random() * Math.PI * 2;
+    this.baseY = y;
+    this.settled = false;
+    this.settledTimer = 0;
+    this.collectedTimer = 0;
+    this.collecting = false;
+  }
+
+  update(player, platforms, engine) {
+    if (this.dead) return;
+    this.phase += 0.12;
+    this.life--;
+    if (this.life <= 0) { this.dead = true; return; }
+
+    if (this.collecting) {
+      this.collectedTimer++;
+      // Magnetize to player
+      const tx = player.x + player.w / 2 - this.w / 2;
+      const ty = player.y + player.h / 2 - this.h / 2;
+      this.x += (tx - this.x) * 0.35;
+      this.y += (ty - this.y) * 0.35;
+      if (this.collectedTimer >= 6) {
+        player.collectSoulSeed(this.value);
+        engine.particles.burst(player.x + player.w / 2, player.y + player.h / 2, 'soul_pickup');
+        if (engine.sound?.playSoulPickup) engine.sound.playSoulPickup();
+        this.dead = true;
+      }
+      return;
+    }
+
+    if (!this.settled) {
+      // Falling/launching phase
+      this.vy += 0.32;
+      if (this.vy > 9) this.vy = 9;
+      this.vx *= 0.96;
+      this.x += this.vx;
+      this.y += this.vy;
+      // Stop when contacting a platform
+      for (const p of platforms) {
+        if (this.x + this.w > p.x && this.x < p.x + p.w &&
+            this.y + this.h >= p.y && this.y + this.h <= p.y + 18 && this.vy >= 0) {
+          this.y = p.y - this.h - 18;
+          this.baseY = this.y;
+          this.settled = true;
+          this.vx = 0; this.vy = 0;
+          break;
+        }
+      }
+      if (this.y > engine.H - 30) {
+        this.y = engine.H - 80;
+        this.baseY = this.y;
+        this.settled = true;
+      }
+    } else {
+      // Floating idle
+      this.settledTimer++;
+      this.y = this.baseY + Math.sin(this.phase) * 4;
+    }
+
+    // Magnet attract within range
+    const cx = player.x + player.w / 2;
+    const cy = player.y + player.h / 2;
+    const dx = cx - (this.x + this.w / 2);
+    const dy = cy - (this.y + this.h / 2);
+    const dist = Math.hypot(dx, dy);
+    if (dist < 90) {
+      this.x += (dx / dist) * 4;
+      this.y += (dy / dist) * 4;
+    }
+    if (dist < 28) {
+      this.collecting = true;
     }
   }
 }

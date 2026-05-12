@@ -1,7 +1,9 @@
-import { Player, ShadowDemon, VoidSprite, DimensionWatcher, LurkerCultist, BossServant } from './entities.js';
+import { Player, ShadowDemon, VoidSprite, DimensionWatcher, LurkerCultist, BossServant, SoulSeed } from './entities.js';
 import { ParticleSystem } from './particles.js';
 import { UPGRADES } from './upgrades.js';
 import { Renderer } from './renderer.js';
+import { initSprites } from './sprites.js';
+import { soundEngine } from './sound.js';
 
 function rectsOverlap(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
@@ -24,7 +26,18 @@ export class GameEngine {
     this.enemies = [];
     this.platforms = [];
     this.projectiles = [];
+    this.soulSeeds = [];
+    this.soulSeedSpawnTimer = 0;
     this.particles = new ParticleSystem();
+
+    // Virtual (touch) input state - merged with keyboard
+    this.touchInput = {
+      left: false, right: false,
+      jumpPressed: false, dashPressed: false,
+      lightPressed: false, heavyPressed: false,
+      specialPressed: false, ultimatePressed: false
+    };
+    this.prevTouchInput = { ...this.touchInput };
 
     this.floor = 1;
     this.wave = 0;
@@ -43,7 +56,13 @@ export class GameEngine {
 
     this.callbacks = callbacks;
     this.renderer = new Renderer();
+    this.sound = soundEngine;
 
+    // Flybutt companion
+    this.flybutt = { x: 200, y: 400, wingAngle: 0 };
+    this._prevPlayerState = 'idle';
+
+    initSprites();
     this.generateFloor();
   }
 
@@ -77,29 +96,107 @@ export class GameEngine {
     this.justPressed = new Set([...this.keysDown].filter(k => !this.prevKeys.has(k)));
     this.prevKeys = new Set(this.keysDown);
 
+    // Compute touch "justPressed" flags
+    const t = this.touchInput;
+    const pt = this.prevTouchInput;
+    const tJust = (cur, prev) => cur && !prev;
+    const tJumpJust = tJust(t.jumpPressed, pt.jumpPressed);
+    const tDashJust = tJust(t.dashPressed, pt.dashPressed);
+    const tLightJust = tJust(t.lightPressed, pt.lightPressed);
+    const tHeavyJust = tJust(t.heavyPressed, pt.heavyPressed);
+    const tSpecialJust = tJust(t.specialPressed, pt.specialPressed);
+    const tUltimateJust = tJust(t.ultimatePressed, pt.ultimatePressed);
+    this.prevTouchInput = { ...t };
+
     const keys = {
-      left: this.keysDown.has('ArrowLeft') || this.keysDown.has('a') || this.keysDown.has('A'),
-      right: this.keysDown.has('ArrowRight') || this.keysDown.has('d') || this.keysDown.has('D'),
-      jumpJustPressed: this.justPressed.has(' ') || this.justPressed.has('ArrowUp') || this.justPressed.has('w') || this.justPressed.has('W'),
-      dashJustPressed: this.justPressed.has('Shift'),
-      lightJustPressed: this.justPressed.has('j') || this.justPressed.has('J') || this.justPressed.has('z') || this.justPressed.has('Z'),
-      heavyJustPressed: this.justPressed.has('k') || this.justPressed.has('K') || this.justPressed.has('x') || this.justPressed.has('X'),
-      specialJustPressed: this.justPressed.has('l') || this.justPressed.has('L') || this.justPressed.has('c') || this.justPressed.has('C'),
+      left: this.keysDown.has('ArrowLeft') || this.keysDown.has('a') || this.keysDown.has('A') || t.left,
+      right: this.keysDown.has('ArrowRight') || this.keysDown.has('d') || this.keysDown.has('D') || t.right,
+      jumpJustPressed: this.justPressed.has(' ') || this.justPressed.has('ArrowUp') || this.justPressed.has('w') || this.justPressed.has('W') || tJumpJust,
+      dashJustPressed: this.justPressed.has('Shift') || tDashJust,
+      lightJustPressed: this.justPressed.has('j') || this.justPressed.has('J') || this.justPressed.has('z') || this.justPressed.has('Z') || tLightJust,
+      heavyJustPressed: this.justPressed.has('k') || this.justPressed.has('K') || this.justPressed.has('x') || this.justPressed.has('X') || tHeavyJust,
+      specialJustPressed: this.justPressed.has('l') || this.justPressed.has('L') || this.justPressed.has('c') || this.justPressed.has('C') || tSpecialJust,
+      ultimateJustPressed: this.justPressed.has('u') || this.justPressed.has('U') || this.justPressed.has('r') || this.justPressed.has('R') || tUltimateJust,
     };
 
     if (this.player.state !== 'dead') {
+      const prevState = this._prevPlayerState;
       this.player.update(keys, this.platforms, this);
+      // Running trail effect
+      if (this.player.state === 'running' && this.player.onGround) {
+        this.player.runTrailTimer++;
+        if (this.player.runTrailTimer >= 5) {
+          this.player.runTrailTimer = 0;
+          this.particles.burst(
+            this.player.x + this.player.w / 2 - this.player.vx * 1.2,
+            this.player.y + this.player.h - 2,
+            'run_trail', 2
+          );
+        }
+      } else {
+        this.player.runTrailTimer = 0;
+      }
+      // Ultimate spinning aura particles
+      if (this.player.ultimateActive && this.frameCount % 3 === 0) {
+        this.particles.burst(
+          this.player.x + this.player.w / 2,
+          this.player.y + this.player.h / 2,
+          'ultimate_spin', 4
+        );
+      }
+      // Sound triggers on state changes
+      if (this.player.state !== prevState) {
+        if (this.player.state === 'jumping') this.sound.playJump();
+        if (this.player.state === 'dashing') this.sound.playDash();
+        if (this.player.state === 'attacking_light' && prevState !== 'attacking_light') this.sound.playLightAttack();
+        if (this.player.state === 'attacking_heavy' && prevState !== 'attacking_heavy') this.sound.playHeavyAttack();
+        if (this.player.state === 'attacking_special' && prevState !== 'attacking_special') this.sound.playSpecialAttack();
+      }
+      this._prevPlayerState = this.player.state;
     }
 
     this.resolveCombat();
 
+    const enemiesBefore = this.enemies.length;
     this.enemies.forEach(e => e.update(this.player, this.platforms, this));
+    // Spawn soul seeds from killed enemies
+    for (const e of this.enemies) {
+      if (e.dead && !e._seedDropped) {
+        e._seedDropped = true;
+        const count = e.type === 'boss' ? 8 : (e.type === 'lurker_cultist' ? 3 : 2);
+        for (let i = 0; i < count; i++) {
+          const seed = new SoulSeed(
+            e.x + e.w / 2 + (Math.random() - 0.5) * 30,
+            e.y + e.h / 2,
+            e.type === 'boss' ? 15 : 8
+          );
+          seed.vx = (Math.random() - 0.5) * 5;
+          seed.vy = -4 - Math.random() * 3;
+          this.soulSeeds.push(seed);
+        }
+      }
+    }
     this.enemies = this.enemies.filter(e => !e.dead);
+
+    // Update soul seeds
+    this.soulSeeds.forEach(s => s.update(this.player, this.platforms, this));
+    this.soulSeeds = this.soulSeeds.filter(s => !s.dead);
+
+    // Ambient soul seed spawn (occasionally drift in from edges)
+    this.soulSeedSpawnTimer++;
+    if (this.soulSeedSpawnTimer >= 360 && this.soulSeeds.length < 4 && this.enemies.length > 0) {
+      this.soulSeedSpawnTimer = 0;
+      const sx = 100 + Math.random() * (this.W - 200);
+      const seed = new SoulSeed(sx, 80, 6);
+      seed.vy = 0; seed.vx = 0;
+      this.soulSeeds.push(seed);
+    }
 
     this.projectiles.forEach(p => this.updateProjectile(p));
     this.projectiles = this.projectiles.filter(p => p.active);
 
     this.particles.update();
+    this._updateFlybutt();
     this.manageWaves();
 
     if (this.callbacks.onStatsUpdate) {
@@ -110,7 +207,12 @@ export class GameEngine {
         floor: this.floor,
         score: this.player.score,
         wave: this.wave,
-        maxWaves: this.maxWaves
+        maxWaves: this.maxWaves,
+        ultimateCharge: this.player.ultimateCharge,
+        maxUltimateCharge: this.player.maxUltimateCharge,
+        ultimateActive: this.player.ultimateActive,
+        dashCooldown: this.player.dashCooldown,
+        spReady: this.player.sp >= 30
       });
     }
   }
@@ -159,6 +261,7 @@ export class GameEngine {
         this.particles.burst(enemy.x + enemy.w / 2, enemy.y + enemy.h / 3, 'void_hit');
         this.particles.burst(enemy.x + enemy.w / 2, enemy.y + enemy.h / 3, 'sparks');
         this.particles.addDamageNumber(enemy.x + enemy.w / 2, enemy.y, hitbox.damage, hitbox.type);
+        this.sound.playHit();
         if (this.callbacks.onComboUpdate) this.callbacks.onComboUpdate(this.player.combo);
       }
     }
@@ -166,6 +269,7 @@ export class GameEngine {
 
   dealEnemyDamage(player, amount, engine) {
     player.takeDamage(amount, engine);
+    engine.sound.playPlayerHurt();
   }
 
   manageWaves() {
@@ -192,6 +296,7 @@ export class GameEngine {
         this.floorCleared = true;
         this.gameState = 'floor_clear';
         this.pause();
+        this.sound.playFloorClear();
         if (this.callbacks.onFloorClear) this.callbacks.onFloorClear(this.floor);
       }
     }
@@ -211,6 +316,7 @@ export class GameEngine {
         this.enemies.push(boss);
         this.bossActive = true;
         this.showingBossWarning = false;
+        this.sound.playBossRoar();
         this.resume();
       }, 3500);
       return;
@@ -283,6 +389,7 @@ export class GameEngine {
     this.gameState = 'playing';
     this.enemies = [];
     this.projectiles = [];
+    this.soulSeeds = [];
     this.generateFloor();
     this.player.x = 200; this.player.y = 400;
     this.player.vx = 0; this.player.vy = 0;
@@ -291,6 +398,21 @@ export class GameEngine {
     this.wave = 1;
     this.waveCooldown = 0;
     this.spawnWave();
+  }
+
+  _updateFlybutt() {
+    const p = this.player;
+    const side = p.facingRight ? -1 : 1;
+    const targetX = p.x + p.w / 2 + side * 50;
+    const targetY = p.y - 35;
+    this.flybutt.x += (targetX - this.flybutt.x) * 0.06;
+    this.flybutt.y += (targetY - this.flybutt.y) * 0.06;
+  }
+
+  setTouch(action, value) {
+    if (action in this.touchInput) {
+      this.touchInput[action] = !!value;
+    }
   }
 
   setupInputs() {

@@ -50,6 +50,10 @@ export class ParticleSystem {
       void_hit: { color: '#ff3366', count: 7, spread: 7, upForce: 2, life: 18, size: 5, gravity: 0.15, shrink: 0.4 },
       smoke: { color: 'rgba(130,90,180,0.5)', count: 8, spread: 6, upForce: 1.5, life: 55, size: 18, gravity: -0.04, shrink: 0.08 },
       boss_hit: { color: '#ff6600', count: 18, spread: 14, upForce: 4, life: 30, size: 10, gravity: 0.2, shrink: 0.25 },
+      run_trail: { color: 'rgba(168,85,247,0.6)', count: 3, spread: 2, upForce: -0.2, life: 22, size: 7, gravity: 0.05, shrink: 0.25 },
+      ultimate_explosion: { color: '#c084fc', count: 50, spread: 22, upForce: 2, life: 55, size: 14, gravity: 0, shrink: 0.18 },
+      ultimate_spin: { color: '#fbbf24', count: 6, spread: 16, upForce: 0, life: 30, size: 6, gravity: 0, shrink: 0.2 },
+      soul_pickup: { color: '#a855f7', count: 14, spread: 10, upForce: 1, life: 30, size: 6, gravity: -0.06, shrink: 0.2 },
     };
 
     const p = presets[type] || presets.sparks;
