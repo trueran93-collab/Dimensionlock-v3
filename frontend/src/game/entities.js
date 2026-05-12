@@ -758,6 +758,147 @@ export class BossServant extends Enemy {
   }
 }
 
+// ─── Lurker Boss (Plague Doctor) ─────────────────────────────────────────────
+// Three-phase boss using the Lurker sprite sheet. Floor 5+ boss encounters.
+
+export class LurkerBoss extends Enemy {
+  constructor(x, y, scale = 1) {
+    super(x, y, {
+      w: 78, h: 142,
+      hp: Math.floor(820 * scale),
+      speed: 1.8,
+      damage: Math.floor(20 * scale),
+      attackRange: 95,
+      detectionRange: 9999,
+      type: 'lurker_boss',
+      score: 700
+    });
+    this.phase = 1;
+    this.maxHpRef = this.maxHp;
+    this.specialCooldown = 220;
+    this.teleportCooldown = 480;
+    this.summonCooldown = 720;
+    this.poisonCloudCooldown = 180;
+    this.attackState = 'idle';
+    this.attackStateTimer = 0;
+    this.floatOffset = 0;
+    this.scaleAdj = scale;
+  }
+
+  ai(player, engine) {
+    const { dx, dy, dist } = this._distToPlayer(player);
+    this.facingRight = dx > 0;
+
+    // Phase transitions
+    const hpFrac = this.hp / this.maxHpRef;
+    if (this.phase === 1 && hpFrac < 0.66) {
+      this.phase = 2;
+      this.speed *= 1.25;
+      engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'boss_hit');
+      engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'dark_aura');
+      if (engine.sound?.playBossRoar) engine.sound.playBossRoar();
+    } else if (this.phase === 2 && hpFrac < 0.33) {
+      this.phase = 3;
+      this.speed *= 1.2;
+      this.damage = Math.floor(this.damage * 1.2);
+      engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'boss_hit');
+      engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'ultimate_explosion');
+      if (engine.sound?.playBossRoar) engine.sound.playBossRoar();
+    }
+
+    this.specialCooldown--;
+    this.teleportCooldown--;
+    this.poisonCloudCooldown--;
+    if (this.phase === 3) this.summonCooldown--;
+    this.floatOffset += 0.04;
+
+    if (this.attackStateTimer > 0) this.attackStateTimer--;
+    else this.attackState = 'idle';
+
+    // Phase 2+ teleport
+    if (this.phase >= 2 && this.teleportCooldown <= 0 && dist > 180) {
+      this.teleportCooldown = this.phase === 3 ? 280 : 380;
+      engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'smoke');
+      engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'dark_aura');
+      const side = Math.random() < 0.5 ? -1 : 1;
+      this.x = Math.max(40, Math.min(engine.W - this.w - 40, player.x + side * 140));
+      this.y = player.y - 30;
+      engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'smoke');
+      this.attackState = 'special';
+      this.attackStateTimer = 24;
+      return;
+    }
+
+    // Phase 3 summon adds
+    if (this.phase === 3 && this.summonCooldown <= 0) {
+      this.summonCooldown = 480;
+      this.attackState = 'special';
+      this.attackStateTimer = 30;
+      for (let i = 0; i < 2; i++) {
+        const sx = this.x + (i === 0 ? -60 : this.w + 60);
+        const minion = new LurkerCultist(sx, this.y + 30, this.scaleAdj * 0.85);
+        engine.enemies.push(minion);
+        engine.particles.burst(sx + 20, this.y + 50, 'dark_aura');
+      }
+      return;
+    }
+
+    // Poison cloud projectile
+    if (this.poisonCloudCooldown <= 0 && dist < 480) {
+      this.poisonCloudCooldown = this.phase === 3 ? 110 : (this.phase === 2 ? 150 : 200);
+      this.attackState = 'attack';
+      this.attackStateTimer = 22;
+      const cloudX = player.x + player.w / 2 + (Math.random() - 0.5) * 80;
+      engine.addProjectile({
+        x: this.x + this.w / 2, y: this.y + this.h / 3,
+        vx: (cloudX - (this.x + this.w / 2)) * 0.012,
+        vy: -2.5,
+        gravity: 0.18,
+        damage: Math.floor(this.damage * 0.6),
+        owner: 'enemy', life: 130,
+        color: '#84cc16', glow: '#16a34a', size: 13,
+        kind: 'poison_cloud'
+      });
+      engine.particles.burst(this.x + this.w / 2, this.y + this.h / 3, 'sparks');
+    }
+
+    // Special: crimson radial bolts
+    if (this.specialCooldown <= 0) {
+      this.specialCooldown = this.phase === 3 ? 200 : (this.phase === 2 ? 260 : 340);
+      this.attackState = 'special';
+      this.attackStateTimer = 30;
+      const bolts = this.phase === 3 ? 8 : (this.phase === 2 ? 6 : 4);
+      for (let i = 0; i < bolts; i++) {
+        const a = (Math.PI * 2 * i) / bolts + this.floatOffset * 0.3;
+        engine.addProjectile({
+          x: this.x + this.w / 2, y: this.y + this.h / 2,
+          vx: Math.cos(a) * 4.2, vy: Math.sin(a) * 4.2,
+          damage: this.damage, owner: 'enemy',
+          life: 110, color: '#ff3366', size: 10, glow: '#ff6600'
+        });
+      }
+      engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'boss_hit');
+    }
+
+    // Movement / melee
+    if (dist > this.attackRange + 20) {
+      this.vx += (dx > 0 ? 1 : -1) * 0.28;
+      if (Math.abs(this.vx) > this.speed) this.vx = Math.sign(this.vx) * this.speed;
+      if (this.attackState === 'idle') this.attackState = 'walk';
+    } else {
+      this.vx *= 0.82;
+      if (this.attackCooldown <= 0 && Math.abs(dy) < 110) {
+        this.attackCooldown = 70;
+        this.attackState = 'attack';
+        this.attackStateTimer = 20;
+        engine.dealEnemyDamage(player, this.damage, engine);
+        engine.particles.burst(player.x + player.w / 2, player.y + player.h / 2, 'void_hit');
+      }
+    }
+  }
+}
+
+
 
 // ─── Soul Seed ───────────────────────────────────────────────────────────────
 // Floating collectible that fills ultimate charge

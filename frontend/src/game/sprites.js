@@ -1,6 +1,7 @@
 // Sprite sheet loader with black-background transparency handling
 
 const MAYTRADALIS_URL = 'https://customer-assets.emergentagent.com/job_anime-deathly-rogue/artifacts/o6f84tbr_sprite-max-px-frames-16-rows-4-cols-4%20%282%29.png';
+const LURKER_BOSS_URL = '/sprites/lurker_boss.png';
 
 class SpriteSheet {
   constructor(url, cols, rows) {
@@ -99,6 +100,25 @@ export const SPRITES = {};
 
 export function initSprites() {
   SPRITES.maytradalis = new SpriteSheet(MAYTRADALIS_URL, 4, 4);
+  SPRITES.lurker_boss = new SpriteSheet(LURKER_BOSS_URL, 4, 4);
+}
+
+// Map Lurker boss state to sprite frame
+export function getLurkerFrame(state, animFrame) {
+  switch (state) {
+    case 'idle':
+      return Math.floor(animFrame / 8) % 4;          // row 0: idle 0-3
+    case 'walk':
+    case 'chase':
+      return 4 + Math.floor(animFrame / 5) % 4;      // row 1: walk 4-7
+    case 'attack':
+      return 8 + Math.floor(animFrame / 4) % 4;      // row 2: attack 8-11
+    case 'special':
+    case 'charge':
+      return 12 + Math.floor(animFrame / 4) % 4;     // row 3: special 12-15
+    default:
+      return 0;
+  }
 }
 
 // Map player state to sprite frame
