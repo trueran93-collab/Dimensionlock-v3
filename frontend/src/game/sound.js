@@ -4,315 +4,303 @@
 // ============================================================
 
 // ============================================================
-// MUSIC ENGINE — Gothic rock soundtrack synthesizer
+// MUSIC ENGINE — Cinematic orchestral dark fantasy score
+// Dark strings · Choir pads · Sub-bass drone · Sparse piano
+// No drums — pure atmosphere
 // ============================================================
 
 class MusicEngine {
   constructor(ctx, masterGain) {
     this.ctx = ctx;
 
-    // Separate music volume bus
     this.musicGain = ctx.createGain();
     this.musicGain.gain.value = 0;
     this.musicGain.connect(masterGain);
 
-    // Instrument buses
-    this.guitarBus = ctx.createGain();
-    this.guitarBus.gain.value = 0.55;
-    this.guitarBus.connect(this.musicGain);
+    // ── Instrument buses ──────────────────────────────────
+    this.stringsBus = ctx.createGain();
+    this.stringsBus.gain.value = 0.42;
+    this.stringsBus.connect(this.musicGain);
+
+    this.choirBus = ctx.createGain();
+    this.choirBus.gain.value = 0.28;
+    this.choirBus.connect(this.musicGain);
 
     this.bassBus = ctx.createGain();
-    this.bassBus.gain.value = 0.7;
+    this.bassBus.gain.value = 0.55;
     this.bassBus.connect(this.musicGain);
 
-    this.drumBus = ctx.createGain();
-    this.drumBus.gain.value = 0.85;
-    this.drumBus.connect(this.musicGain);
+    this.pianoBus = ctx.createGain();
+    this.pianoBus.gain.value = 0.32;
+    this.pianoBus.connect(this.musicGain);
 
-    this.padBus = ctx.createGain();
-    this.padBus.gain.value = 0.22;
-    this.padBus.connect(this.musicGain);
+    this.tensionBus = ctx.createGain();
+    this.tensionBus.gain.value = 0.18;
+    this.tensionBus.connect(this.musicGain);
 
-    // Reverb for atmosphere
-    const reverbBuf = this._makeImpulse(2.2, 3.0);
+    // ── Heavy cinematic reverb ────────────────────────────
+    const reverbBuf = this._makeImpulse(4.5, 1.8);
     this.reverb = ctx.createConvolver();
     this.reverb.buffer = reverbBuf;
     const reverbSend = ctx.createGain();
-    reverbSend.gain.value = 0.18;
-    this.padBus.connect(reverbSend);
-    this.guitarBus.connect(reverbSend);
+    reverbSend.gain.value = 0.45;
+    this.stringsBus.connect(reverbSend);
+    this.choirBus.connect(reverbSend);
+    this.pianoBus.connect(reverbSend);
     reverbSend.connect(this.reverb);
     this.reverb.connect(this.musicGain);
 
-    // Distortion curves
-    this._heavyDist = this._makeDistCurve(280);
-    this._mildDist = this._makeDistCurve(40);
-
-    // Pre-generate reusable noise buffers
-    this._kickClickBuf = this._makeNoiseBuf(0.05);
-    this._snareBuf = this._makeNoiseBuf(0.22);
-    this._hihatLongBuf = this._makeNoiseBuf(0.12);
-    this._hihatShortBuf = this._makeNoiseBuf(0.05);
-
-    // Scheduler state
+    // ── Scheduler ─────────────────────────────────────────
     this.playing = false;
     this.bossMode = false;
-    this.nextBeatTime = 0;
-    this.currentBeat = 0;
-    this.totalBeats = 16; // 4 bars × 4 beats
+    this.nextBarTime = 0;
+    this.currentBar = 0;
+    this.totalBars = 8;
     this._timer = null;
 
-    // Timing — 120 BPM normal, 140 BPM boss
-    this.tempo = 120;
-    this.beatDur = 60 / this.tempo;
-    this.scheduleAhead = 0.28;
+    // 80 BPM — slow and ominous
+    this.tempo   = 80;
+    this.beatDur = 60 / this.tempo;     // 0.75s
+    this.barDur  = this.beatDur * 4;    // 3.0s per bar
+    this.scheduleAhead = 0.5;
 
-    // Gothic Am chord progression — power chords (root + 5th)
-    // Am → F → Dm → E
+    // ── D-minor cinematic progression ────────────────────
+    // Each chord entry spans 2 bars (6s)
     this.chords = [
-      { freqs: [110, 165],       bassFreq: 55,    name: 'Am' },
-      { freqs: [87.31, 130.81],  bassFreq: 43.65, name: 'F'  },
-      { freqs: [73.42, 110],     bassFreq: 36.71, name: 'Dm' },
-      { freqs: [82.41, 123.47],  bassFreq: 41.20, name: 'E'  },
+      { strings: [146.83, 220.00, 293.66], choir: [293.66, 349.23, 440.00], bassFreq: 73.42,  name: 'Dm' },
+      { strings: [110.00, 164.81, 220.00], choir: [220.00, 261.63, 329.63], bassFreq: 55.00,  name: 'Am' },
+      { strings: [116.54, 174.61, 233.08], choir: [233.08, 293.66, 349.23], bassFreq: 58.27,  name: 'Bb' },
+      { strings: [130.81, 196.00, 261.63], choir: [261.63, 329.63, 392.00], bassFreq: 65.41,  name: 'C'  },
     ];
 
-    // Lead melody — A natural minor scale over the 4 bars
-    // 0 = rest
-    this.melody = [
-      [440,    0,      329.63, 0     ], // Bar 1 (Am): A4 – E4
-      [392,    0,      349.23, 0     ], // Bar 2 (F):  G4 – F4
-      [329.63, 349.23, 392,    0     ], // Bar 3 (Dm): E4 – F4 – G4
-      [329.63, 0,      0,      0     ], // Bar 4 (E):  E4
+    // ── Sparse piano melody (freq, beatOffset, barSlot) ──
+    // barSlot 0-7 maps to which of the 8 total bars it plays on
+    this.pianoNotes = [
+      [587.33, 0, 0], [440.00, 2, 0],
+      [523.25, 0, 2], [392.00, 3, 2],
+      [466.16, 0, 4], [349.23, 2, 4],
+      [440.00, 0, 6], [523.25, 2, 6], [587.33, 3.5, 6],
     ];
   }
 
   // ── helpers ─────────────────────────────────────────────
   _makeImpulse(duration, decay) {
-    const sr = this.ctx.sampleRate;
+    const sr  = this.ctx.sampleRate;
     const len = Math.floor(sr * duration);
     const buf = this.ctx.createBuffer(2, len, sr);
     for (let ch = 0; ch < 2; ch++) {
       const d = buf.getChannelData(ch);
-      for (let i = 0; i < len; i++) {
-        d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
-      }
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
     }
     return buf;
-  }
-
-  _makeDistCurve(amount) {
-    const n = 512;
-    const c = new Float32Array(n);
-    for (let i = 0; i < n; i++) {
-      const x = (i * 2) / n - 1;
-      c[i] = ((Math.PI + amount) * x) / (Math.PI + amount * Math.abs(x));
-    }
-    return c;
   }
 
   _makeNoiseBuf(dur) {
     const len = Math.floor(this.ctx.sampleRate * dur);
     const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
-    const d = buf.getChannelData(0);
+    const d   = buf.getChannelData(0);
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
     return buf;
   }
 
-  // ── instrument schedulers ────────────────────────────────
-  _guitar(chordIdx, time) {
+  // ── String section (slow attack, lush) ──────────────────
+  _strings(chordIdx, time) {
     const chord = this.chords[chordIdx % 4];
-    const dur = this.beatDur * 4 * 0.94;
+    const dur   = this.barDur * 2 * 0.96; // lasts 2 bars
 
-    chord.freqs.forEach((freq, i) => {
+    chord.strings.forEach((freq, i) => {
       const osc  = this.ctx.createOscillator();
-      const dist = this.ctx.createWaveShaper();
-      const eq   = this.ctx.createBiquadFilter();
+      const lpf  = this.ctx.createBiquadFilter();
       const gain = this.ctx.createGain();
 
       osc.type = 'sawtooth';
       osc.frequency.value = freq;
-      osc.detune.value = i % 2 === 0 ? -10 : 10; // stereo-width detune
-      dist.curve = this._heavyDist;
-      eq.type = 'peaking'; eq.frequency.value = 900; eq.Q.value = 1.5; eq.gain.value = 4;
+      osc.detune.value = i % 2 === 0 ? -6 : 6; // warm detuned chorus
 
+      lpf.type = 'lowpass';
+      lpf.frequency.value = 1200;
+      lpf.Q.value = 0.4;
+
+      // Long attack → sustain → slow release
       gain.gain.setValueAtTime(0, time);
-      gain.gain.linearRampToValueAtTime(0.13, time + 0.025);
-      gain.gain.setValueAtTime(0.11, time + dur * 0.78);
+      gain.gain.linearRampToValueAtTime(0.075, time + 2.8);
+      gain.gain.setValueAtTime(0.068, time + dur - 2.0);
       gain.gain.linearRampToValueAtTime(0, time + dur);
 
-      osc.connect(dist); dist.connect(eq); eq.connect(gain); gain.connect(this.guitarBus);
-      osc.start(time); osc.stop(time + dur + 0.06);
+      osc.connect(lpf); lpf.connect(gain); gain.connect(this.stringsBus);
+      osc.start(time); osc.stop(time + dur + 0.1);
+
+      // Slightly detuned double for warmth
+      if (i === 0) {
+        const osc2  = this.ctx.createOscillator();
+        const g2    = this.ctx.createGain();
+        osc2.type = 'sawtooth';
+        osc2.frequency.value = freq;
+        osc2.detune.value = 8;
+        g2.gain.setValueAtTime(0, time);
+        g2.gain.linearRampToValueAtTime(0.04, time + 3.2);
+        g2.gain.linearRampToValueAtTime(0, time + dur);
+        osc2.connect(lpf); osc2.connect(g2); g2.connect(this.stringsBus);
+        osc2.start(time); osc2.stop(time + dur + 0.1);
+      }
     });
   }
 
-  _bass(chordIdx, time) {
+  // ── Choir pad (slow vibrato, vocal quality) ──────────────
+  _choir(chordIdx, time) {
     const chord = this.chords[chordIdx % 4];
-    const dur = this.beatDur * 4 * 0.92;
+    const dur   = this.barDur * 2 * 0.95;
 
-    const osc   = this.ctx.createOscillator();
-    const dist  = this.ctx.createWaveShaper();
-    const lpf   = this.ctx.createBiquadFilter();
-    const gain  = this.ctx.createGain();
+    chord.choir.forEach((freq, i) => {
+      const osc    = this.ctx.createOscillator();
+      const vib    = this.ctx.createOscillator();
+      const vibGain = this.ctx.createGain();
+      const gain   = this.ctx.createGain();
 
-    osc.type = 'sawtooth';
-    osc.frequency.value = chord.bassFreq;
-    dist.curve = this._mildDist;
-    lpf.type = 'lowpass'; lpf.frequency.value = 350; lpf.Q.value = 1.8;
+      osc.type = 'sine';
+      osc.frequency.value = freq;
 
-    gain.gain.setValueAtTime(0, time);
-    gain.gain.linearRampToValueAtTime(0.45, time + 0.04);
-    gain.gain.setValueAtTime(0.38, time + dur * 0.82);
-    gain.gain.linearRampToValueAtTime(0, time + dur);
+      // Choir vibrato (≈5.5 Hz, ±3 cents)
+      vib.frequency.value = 5.5 + i * 0.3;
+      vibGain.gain.value  = 2.8;
+      vib.connect(vibGain); vibGain.connect(osc.frequency);
 
-    osc.connect(dist); dist.connect(lpf); lpf.connect(gain); gain.connect(this.bassBus);
-    osc.start(time); osc.stop(time + dur + 0.06);
+      // Very long attack — choir swells in slowly
+      gain.gain.setValueAtTime(0, time);
+      gain.gain.linearRampToValueAtTime(0.055, time + 3.5);
+      gain.gain.setValueAtTime(0.05, time + dur - 2.5);
+      gain.gain.linearRampToValueAtTime(0, time + dur);
+
+      osc.connect(gain); gain.connect(this.choirBus);
+      osc.start(time); osc.stop(time + dur + 0.1);
+      vib.start(time); vib.stop(time + dur + 0.1);
+    });
   }
 
-  _pad(chordIdx, time) {
+  // ── Sub-bass drone ────────────────────────────────────────
+  _bass(chordIdx, time) {
     const chord = this.chords[chordIdx % 4];
-    const dur = this.beatDur * 4;
-    // Minor triad atmosphere
-    [chord.freqs[0] * 2, chord.freqs[0] * 2.378, chord.freqs[0] * 3].forEach((freq, i) => {
+    const dur   = this.barDur * 2 * 0.9;
+
+    // Deep sine drone
+    const osc  = this.ctx.createOscillator();
+    const lpf  = this.ctx.createBiquadFilter();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.value = chord.bassFreq;
+    lpf.type = 'lowpass'; lpf.frequency.value = 160;
+
+    gain.gain.setValueAtTime(0, time);
+    gain.gain.linearRampToValueAtTime(0.55, time + 1.8);
+    gain.gain.setValueAtTime(0.5, time + dur - 1.5);
+    gain.gain.linearRampToValueAtTime(0, time + dur);
+
+    osc.connect(lpf); lpf.connect(gain); gain.connect(this.bassBus);
+    osc.start(time); osc.stop(time + dur + 0.1);
+
+    // Slow heartbeat pulse (every 2 beats)
+    for (let beat = 0; beat < 8; beat++) {
+      const pt   = time + beat * this.beatDur;
+      const pOsc = this.ctx.createOscillator();
+      const pGain = this.ctx.createGain();
+      pOsc.type = 'sine';
+      pOsc.frequency.value = chord.bassFreq * 0.5;
+      pGain.gain.setValueAtTime(0, pt);
+      pGain.gain.linearRampToValueAtTime(0.22, pt + 0.07);
+      pGain.gain.exponentialRampToValueAtTime(0.001, pt + 0.55);
+      pOsc.connect(pGain); pGain.connect(this.bassBus);
+      pOsc.start(pt); pOsc.stop(pt + 0.6);
+    }
+  }
+
+  // ── Sparse piano (plucked triangle tones) ────────────────
+  _piano(barIndex, time) {
+    const notes = this.pianoNotes.filter(n => n[2] === barIndex % 8);
+    notes.forEach(([freq, beatOff]) => {
+      const noteTime = time + beatOff * this.beatDur;
+      const dur = this.beatDur * 2.2;
+
+      // Piano body: triangle with quick attack
       const osc  = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
-      osc.type = i === 0 ? 'sine' : 'triangle';
+      osc.type = 'triangle';
       osc.frequency.value = freq;
-      osc.detune.value = (Math.random() - 0.5) * 8;
+      gain.gain.setValueAtTime(0, noteTime);
+      gain.gain.linearRampToValueAtTime(0.18, noteTime + 0.018);
+      gain.gain.exponentialRampToValueAtTime(0.001, noteTime + dur);
+      osc.connect(gain); gain.connect(this.pianoBus);
+      osc.start(noteTime); osc.stop(noteTime + dur + 0.05);
+
+      // Harmonic overtone (piano shimmer)
+      const ov  = this.ctx.createOscillator();
+      const ovG = this.ctx.createGain();
+      ov.type = 'sine';
+      ov.frequency.value = freq * 2;
+      ovG.gain.setValueAtTime(0, noteTime);
+      ovG.gain.linearRampToValueAtTime(0.06, noteTime + 0.01);
+      ovG.gain.exponentialRampToValueAtTime(0.001, noteTime + dur * 0.35);
+      ov.connect(ovG); ovG.connect(this.pianoBus);
+      ov.start(noteTime); ov.stop(noteTime + dur * 0.4);
+    });
+  }
+
+  // ── Tension layer (boss mode: low rumble + dissonance) ───
+  _tension(chordIdx, time) {
+    if (!this.bossMode) return;
+    const chord = this.chords[chordIdx % 4];
+    const dur   = this.barDur * 2;
+
+    // Dissonant tritone
+    const tritone = chord.bassFreq * Math.pow(2, 6 / 12); // augmented 4th
+    [chord.bassFreq * 0.5, tritone].forEach(freq => {
+      const osc  = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.value = freq;
       gain.gain.setValueAtTime(0, time);
-      gain.gain.linearRampToValueAtTime(0.038, time + 0.55);
-      gain.gain.setValueAtTime(0.032, time + dur * 0.72);
+      gain.gain.linearRampToValueAtTime(0.06, time + 1.5);
       gain.gain.linearRampToValueAtTime(0, time + dur);
-      osc.connect(gain); gain.connect(this.padBus);
+      osc.connect(gain); gain.connect(this.tensionBus);
       osc.start(time); osc.stop(time + dur + 0.1);
     });
   }
 
-  _melody(barIdx, beatInBar, time) {
-    const freq = this.melody[barIdx % 4][beatInBar];
-    if (!freq) return;
-    const dur = this.beatDur * 0.8;
-    const osc  = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    osc.type = 'triangle';
-    osc.frequency.value = freq;
-    osc.detune.value = -6;
-    gain.gain.setValueAtTime(0, time);
-    gain.gain.linearRampToValueAtTime(0.065, time + 0.03);
-    gain.gain.setValueAtTime(0.055, time + dur * 0.68);
-    gain.gain.linearRampToValueAtTime(0, time + dur);
-    osc.connect(gain); gain.connect(this.guitarBus);
-    osc.start(time); osc.stop(time + dur + 0.05);
-  }
+  // ── Bar scheduler ─────────────────────────────────────────
+  _scheduleBar(barIndex, time) {
+    const chordIdx = Math.floor(barIndex / 2) % 4;
 
-  _kick(time) {
-    // Low sine sweep
-    const osc  = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(165, time);
-    osc.frequency.exponentialRampToValueAtTime(35, time + 0.13);
-    gain.gain.setValueAtTime(1.1, time);
-    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.28);
-    osc.connect(gain); gain.connect(this.drumBus);
-    osc.start(time); osc.stop(time + 0.32);
-
-    // Click transient
-    const src  = this.ctx.createBufferSource();
-    const filt = this.ctx.createBiquadFilter();
-    const cGain = this.ctx.createGain();
-    src.buffer = this._kickClickBuf;
-    filt.type = 'lowpass'; filt.frequency.value = 280;
-    cGain.gain.setValueAtTime(0.55, time);
-    cGain.gain.exponentialRampToValueAtTime(0.001, time + 0.045);
-    src.connect(filt); filt.connect(cGain); cGain.connect(this.drumBus);
-    src.start(time);
-  }
-
-  _snare(time) {
-    // Noise body
-    const src  = this.ctx.createBufferSource();
-    const filt = this.ctx.createBiquadFilter();
-    const gain = this.ctx.createGain();
-    src.buffer = this._snareBuf;
-    filt.type = 'bandpass'; filt.frequency.value = 2600; filt.Q.value = 0.65;
-    gain.gain.setValueAtTime(1.0, time);
-    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.17);
-    src.connect(filt); filt.connect(gain); gain.connect(this.drumBus);
-    src.start(time);
-
-    // Body tone
-    const osc  = this.ctx.createOscillator();
-    const oGain = this.ctx.createGain();
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(230, time);
-    osc.frequency.exponentialRampToValueAtTime(100, time + 0.06);
-    oGain.gain.setValueAtTime(0.42, time);
-    oGain.gain.exponentialRampToValueAtTime(0.001, time + 0.1);
-    osc.connect(oGain); oGain.connect(this.drumBus);
-    osc.start(time); osc.stop(time + 0.12);
-  }
-
-  _hihat(time, isAccent) {
-    const buf  = isAccent ? this._hihatLongBuf : this._hihatShortBuf;
-    const src  = this.ctx.createBufferSource();
-    const filt = this.ctx.createBiquadFilter();
-    const gain = this.ctx.createGain();
-    src.buffer = buf;
-    filt.type = 'highpass'; filt.frequency.value = 8500;
-    gain.gain.setValueAtTime(isAccent ? 0.38 : 0.18, time);
-    gain.gain.exponentialRampToValueAtTime(0.001, time + (isAccent ? 0.1 : 0.045));
-    src.connect(filt); filt.connect(gain); gain.connect(this.drumBus);
-    src.start(time);
-  }
-
-  // ── scheduler ────────────────────────────────────────────
-  _scheduleBeat(beatIndex, time) {
-    const beatInBar = beatIndex % 4;
-    const barIndex  = Math.floor(beatIndex / 4) % 4;
-
-    if (beatInBar === 0) {
-      this._guitar(barIndex, time);
-      this._bass(barIndex, time);
-      this._pad(barIndex, time);
+    if (barIndex % 2 === 0) {
+      // Chord changes every 2 bars
+      this._strings(chordIdx, time);
+      this._choir(chordIdx, time);
+      this._bass(chordIdx, time);
+      this._tension(chordIdx, time);
     }
-
-    this._melody(barIndex, beatInBar, time);
-
-    // Kick: beats 1 & 3 (index 0, 2)
-    if (beatInBar === 0 || beatInBar === 2) this._kick(time);
-    // Snare: beats 2 & 4 (index 1, 3)
-    if (beatInBar === 1 || beatInBar === 3) this._snare(time);
-
-    // Hi-hats (on beat + 8th-note off-beat)
-    this._hihat(time, beatInBar % 2 === 0);
-    this._hihat(time + this.beatDur * 0.5, false);
-
-    // Boss mode: extra kick on 'and' of beats 1 & 3
-    if (this.bossMode && (beatInBar === 0 || beatInBar === 2)) {
-      this._kick(time + this.beatDur * 0.5);
-    }
+    // Piano melody every bar
+    this._piano(barIndex, time);
   }
 
   _runScheduler() {
     if (!this.playing) return;
-    while (this.nextBeatTime < this.ctx.currentTime + this.scheduleAhead) {
-      this._scheduleBeat(this.currentBeat, this.nextBeatTime);
-      this.nextBeatTime += this.beatDur;
-      this.currentBeat = (this.currentBeat + 1) % this.totalBeats;
+    while (this.nextBarTime < this.ctx.currentTime + this.scheduleAhead) {
+      this._scheduleBar(this.currentBar, this.nextBarTime);
+      this.nextBarTime  += this.barDur;
+      this.currentBar    = (this.currentBar + 1) % this.totalBars;
     }
   }
 
-  // ── public API ───────────────────────────────────────────
+  // ── Public API ────────────────────────────────────────────
   start() {
     if (this.playing) return;
     this.playing = true;
-    this.currentBeat = 0;
-    this.nextBeatTime = this.ctx.currentTime + 0.12;
+    this.currentBar = 0;
+    this.nextBarTime = this.ctx.currentTime + 0.15;
     this._runScheduler();
-    this._timer = setInterval(() => this._runScheduler(), 22);
+    this._timer = setInterval(() => this._runScheduler(), 80);
     this.musicGain.gain.cancelScheduledValues(this.ctx.currentTime);
     this.musicGain.gain.setValueAtTime(0, this.ctx.currentTime);
-    this.musicGain.gain.linearRampToValueAtTime(0.38, this.ctx.currentTime + 2.5);
+    this.musicGain.gain.linearRampToValueAtTime(0.44, this.ctx.currentTime + 4.0);
   }
 
   stop() {
@@ -322,33 +310,41 @@ class MusicEngine {
     const ct = this.ctx.currentTime;
     this.musicGain.gain.cancelScheduledValues(ct);
     this.musicGain.gain.setValueAtTime(this.musicGain.gain.value, ct);
-    this.musicGain.gain.linearRampToValueAtTime(0, ct + 0.9);
+    this.musicGain.gain.linearRampToValueAtTime(0, ct + 2.0);
   }
 
   pause() {
     const ct = this.ctx.currentTime;
     this.musicGain.gain.cancelScheduledValues(ct);
     this.musicGain.gain.setValueAtTime(this.musicGain.gain.value, ct);
-    this.musicGain.gain.linearRampToValueAtTime(0, ct + 0.35);
+    this.musicGain.gain.linearRampToValueAtTime(0, ct + 0.5);
   }
 
   resume() {
-    const target = this.bossMode ? 0.5 : 0.38;
+    const target = this.bossMode ? 0.58 : 0.44;
     const ct = this.ctx.currentTime;
     this.musicGain.gain.cancelScheduledValues(ct);
     this.musicGain.gain.setValueAtTime(this.musicGain.gain.value, ct);
-    this.musicGain.gain.linearRampToValueAtTime(target, ct + 0.35);
+    this.musicGain.gain.linearRampToValueAtTime(target, ct + 0.5);
   }
 
   setBossMode(enabled) {
     this.bossMode = enabled;
-    this.tempo = enabled ? 140 : 120;
-    this.beatDur = 60 / this.tempo;
-    const target = enabled ? 0.5 : 0.38;
+    if (enabled) {
+      // Boss: speed up slightly, add tension layer
+      this.tempo   = 95;
+      this.beatDur = 60 / this.tempo;
+      this.barDur  = this.beatDur * 4;
+    } else {
+      this.tempo   = 80;
+      this.beatDur = 60 / this.tempo;
+      this.barDur  = this.beatDur * 4;
+    }
+    const target = enabled ? 0.58 : 0.44;
     const ct = this.ctx.currentTime;
     this.musicGain.gain.cancelScheduledValues(ct);
     this.musicGain.gain.setValueAtTime(this.musicGain.gain.value, ct);
-    this.musicGain.gain.linearRampToValueAtTime(target, ct + 0.6);
+    this.musicGain.gain.linearRampToValueAtTime(target, ct + 1.2);
   }
 }
 
