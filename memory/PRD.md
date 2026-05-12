@@ -1,88 +1,89 @@
-# Dimensionlock: The Endless — PRD
+# Dimensionlock: Deathly Stories — PRD
 
 ## Overview
-Anime-styled fighting roguelike platformer based on the GlobalComix series "Dimensionlock: Deathly Stories".  
+Anime-styled fighting roguelike platformer based on the GlobalComix series "Dimensionlock: Deathly Stories".
 Main character: **Maytradalis** — reaper-in-training with purple hair, black gothic dress, and a giant scythe.
 
 ## Architecture
-- **Frontend**: React + HTML5 Canvas game engine (1280×720)
-- **Backend**: FastAPI + MongoDB (leaderboard scores)
+- **Frontend**: React + HTML5 Canvas custom game engine (1280×720 design canvas, scales fluidly)
+- **Backend**: FastAPI + MongoDB (basic; client-side state currently)
 - **Game Engine**: Custom class-based engine (`src/game/engine.js`)
 
-## Implemented Features (v1.0 — 2025-02-26)
+## Implemented Features
 
-### Core Game
-- Full platformer movement: walk, run, jump, double-jump, dash (with invincibility frames)
-- Combat system:
-  - Light attack (J/Z): fast scythe slash
-  - Heavy attack (K/X): spinning scythe with wide arc
-  - Special (L/C): Dark Aura burst (costs 30 SP)
-- Combo counter: resets after 1.5s without hits, multiplies damage
+### v1.0 (2025-02-26) — Core Roguelike
+- Full platformer movement: walk, run, jump, double-jump, dash with i-frames
+- Combat: Light (J/Z), Heavy (K/X), Special "Dark Aura" (L/C, 30 SP)
+- Combo counter (resets after 1.75s) with damage multiplier
 - SP bar with passive regeneration
-- Spawn invincibility for player
+- Spawn invincibility
+- Endless floors, 3+ waves per floor, enemy scaling
+- 12 upgrades pool
+- Boss every 5 floors (Lurker's Servant, 2 phases)
+- Enemy types: Shadow Demon, Void Sprite, Dimension Watcher, Lurker Cultist, Boss Servant
 
-### Roguelike Progression
-- Infinite floors, each with 3+ waves of enemies
-- Enemies scale in HP/damage/speed with floor number
-- 12 upgrades in pool: soul_harvest, deaths_touch, spectral_speed, reapers_reach, grim_resilience, void_hunger, combo_mastery, shadow_step, attack_speed, soul_barrier, lurkers_bane, reapers_fury
-- Boss every 5 floors (Lurker's Servant with phase 2 at 50% HP)
-- Boss Warning screen with flashing red border
+### v1.1 (2025-02-26) — Visual & Audio Overhaul
+- Non-pixel high-res Maytradalis sprite (replaced pixel art)
+- Intro cinematic with typewriter dialogue (Master Death narration)
+- Main menu title reveal with letter-by-letter glow animation
+- Flybutt companion (yellow bee) follows player with bobbing animation
+- Web Audio API sound system (jump, dash, light/heavy/special attacks, hit, hurt, boss roar, floor clear, upgrade select)
 
-### Enemy Types
-1. **Shadow Demon** — jagged dark melee chaser (floors 1+)
-2. **Void Sprite** — small fast floating swarm (floors 3+)
-3. **Dimension Watcher** — hovering ranged enemy (fires projectiles) (floors 5+)
-4. **Lurker Cultist** — plague-doctor themed, teleports (floors 8+)
-5. **Boss Servant** — large Lurker avatar with 2 phases, radial projectiles
+### v1.3 (2026-02-12) — Cinematic & QoL Pass **(this session)**
+- **AI-generated single-character cutscenes** — Master Death, Flybutt, and The Lurker portraits generated via Gemini nano-banana (image-to-image with reference sheets) and saved to `/app/frontend/public/intro/`. Maytradalis uses the clean reference asset. Each character now has distinct floating animation:
+  - `charFloat` — gentle vertical sway (Maytradalis, Master Death)
+  - `flybuttHover` — erratic bee-like 4-point hover with rotation
+  - `lurkerWrithe` — squirming skew/scale undulation
+- **Single title reveal** — removed intro `title1` / `title2` scenes and the title block from the intro CTA; main menu is now the only place the title is revealed.
+- **Sprite facing direction fixed** — flipped boolean in renderer to match facingRight state.
+- **Pause menu** — ESC / P key or top-center PAUSE button opens "THE REAPER RESTS / Paused" overlay with Resume + Main Menu buttons.
+- **Death screen fix** — engine now ticks `player.deathTimer` even when player is in dead state, so Game Over screen reliably fires with Retry + Main Menu options.
+- **Background overhaul (no grid ground)** — removed cyberpunk perspective grid floor; replaced with foreground cyberpunk-gothic city infrastructure: tall apartment blocks with neon window-grid lights, hanging neon signs, blinking red antenna tips, gothic cathedral spires with stained-glass arched windows, and street lampposts with flickering teal bulbs and light cones.
+- New backend script: `/app/backend/scripts/generate_intro_chars.py` (idempotent regen of character images).
+- **Soul Seed collectibles** — purple/teal floating orbs drop from killed enemies + ambient spawns; magnetize to player on proximity; pickup fills the new Ultimate Charge bar
+- **Soul Harvest Ultimate** (key `U` / `R` or ULT button) — when charge bar reaches 100%, triggers a 2.5s spinning scythe whirlwind AoE with full i-frames, deals repeating damage in a 320×280 area around player
+- **Ultimate Charge Bar (ULT)** — third HUD bar (yellow gradient when ready, pulsing animation)
+- **Running particle trail** — purple ember puffs behind player while running on ground
+- **Mobile-friendly touch controls** — fixed-position on-screen buttons (D-pad ◀▶, JUMP, DASH, ULT, LIGHT, HEAVY, DARK AURA). Auto-detected via `ontouchstart`, `maxTouchPoints`, `(pointer: coarse)`, or `innerWidth <= 900`.
+- **Cinematic cyberpunk + gothic backgrounds** — parallax cyberpunk skyline with neon windows, gothic cathedral spires with stained-glass arched windows + crosses, floating gargoyle silhouettes, perspective neon grid floor (cyberpunk vanishing point), volumetric ground mist, dimensional rift flicker, vignette overlay. 4 themed color palettes rotate every 5 floors (gothic violet → toxic cyber → hellfire ruins → void blue cathedral).
+- New particle presets: `run_trail`, `ultimate_explosion`, `ultimate_spin`, `soul_pickup`
+- New sounds: `playSoulPickup`, `playUltimate`
 
-### UI/UX
-- Gothic dark anime aesthetic: deep purple (#0a0a0f) + teal (#00ffcc) + bright purple (#a855f7)
-- Fonts: Cormorant Garamond (titles), Outfit (body), JetBrains Mono (HUD)
-- Animated main menu with rotating lore lines and starfield
-- Upgrade screen with glassmorphism cards (rarity colors)
-- Game Over screen with stats
-
-### Backend (FastAPI)
-- `GET /api/` — health check
-- `GET /api/health` — detailed health
-- `POST /api/scores` — submit score
-- `GET /api/scores/top` — top 10 leaderboard
-
-## Lore
-> Maytradalis, reaper-in-training, walks the Endless — the space between realities.  
-> With her fly companion Flybutt and guided by Master Death (living skeleton),  
-> she must save Grim Reaper Ava from the Lurker — a plague doctor entity.
-
-## Controls
-| Action | Keys |
-|--------|------|
-| Move | Arrow Keys / WASD |
-| Jump / Double Jump | Space / W |
-| Dash (i-frames) | Shift |
-| Light Attack | J / Z |
-| Heavy Attack | K / X |
-| Special Attack | L / C |
+## Controls (v1.2)
+| Action | Keyboard | Mobile |
+|--------|----------|--------|
+| Move | Arrow / A,D | ◀ ▶ |
+| Jump / Double Jump | Space / W | JUMP |
+| Dash (i-frames) | Shift | DASH |
+| Light Attack | J / Z | LIGHT |
+| Heavy Attack | K / X | HEAVY |
+| Dark Aura (30 SP) | L / C | DARK |
+| Soul Harvest (ULT) | U / R | ULT |
 
 ## Prioritized Backlog
 
-### P0 (Critical for v1.1)
-- [ ] Leaderboard display in game over screen
-- [ ] Sound effects (scythe swings, hit sounds, jump)
-- [ ] More enemy variety and attack patterns
+### P0
+- [ ] Mobile portrait canvas size polish (currently leaves dark gap; consider letterbox or 60vh aspect cap)
+- [ ] Floor 5 boss redesigned as actual Lurker plague doctor entity (current boss is generic Lurker Servant)
+- [ ] Persist high-score leaderboard to backend (MongoDB `/api/scores`)
 
-### P1 (Next major)
-- [ ] Flybutt companion visual (follows player, comments on combos)
-- [ ] Master Death intro cutscene text
-- [ ] More boss types (one per floor theme)
-- [ ] Character sprite animations (frame-based walk cycle)
+### P1
+- [ ] Story progression: Save Grim Reaper Ava milestone after boss 3
+- [ ] More biome variety per theme tier (e.g. floor 11-15 add hellfire ruins enemies)
+- [ ] Dialogue beats between floors (Master Death taunts/encourages)
+- [ ] Additional ultimate variants unlocked via upgrades
 
-### P2 (Polish)
-- [ ] Background parallax scrolling
-- [ ] More particle effects
-- [ ] Game pause functionality
-- [ ] Mobile touch controls
+### P2
+- [ ] Touch swipe gestures (swipe up to jump, swipe right to dash)
+- [ ] Settings menu (volume, controls remap)
+- [ ] Achievement system
+- [ ] Daily challenge floors
 
-## Test Results (iteration_1)
-- Backend: 100% pass
-- Frontend: 100% pass
-- Minor: Deprecated on_event → fixed with lifespan context manager
+## Lore
+> Maytradalis, reaper-in-training, walks the Endless — the space between realities.
+> With her fly companion Flybutt and guided by Master Death (living skeleton),
+> she must save Grim Reaper Ava from the Lurker — a plague doctor entity.
+
+## Test Results
+- iteration_1 (v1.0): Backend 100%, Frontend 100%
+- iteration_2 (v1.2): Frontend 100%. Verified: HUD bars (HP/SP/ULT), all mobile-* testids on 390x844, desktop hides controls at 1280x720, soul-seed → ULT charge integration confirmed (0% → 86% via combat), keyboard inputs route correctly, cyberpunk/gothic background visually confirmed. Only minor design polish: mobile portrait canvas centering.

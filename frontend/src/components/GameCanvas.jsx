@@ -38,9 +38,31 @@ export default function GameCanvas({ onGameOver, onReturnToMenu }) {
   const [upgradeOptions, setUpgradeOptions] = useState([]);
   const [usedUpgrades, setUsedUpgrades] = useState([]);
   const [mobileControlsOn, setMobileControlsOn] = useState(false);
+  const [paused, setPaused] = useState(false);
 
   // Sync default visibility once isTouch is detected
   useEffect(() => { setMobileControlsOn(isTouch); }, [isTouch]);
+
+  const handlePauseToggle = useCallback(() => {
+    setPaused(prev => {
+      const next = !prev;
+      if (engineRef.current) {
+        if (next) engineRef.current.pause();
+        else engineRef.current.resume();
+      }
+      return next;
+    });
+  }, []);
+
+  const handleResume = useCallback(() => {
+    setPaused(false);
+    if (engineRef.current) engineRef.current.resume();
+  }, []);
+
+  const handlePauseClick = useCallback(() => {
+    setPaused(true);
+    if (engineRef.current) engineRef.current.pause();
+  }, []);
 
   const handleFloorClear = useCallback((floor) => {
     const options = getRandomUpgrades(3, usedUpgrades);
@@ -76,12 +98,13 @@ export default function GameCanvas({ onGameOver, onReturnToMenu }) {
       onFloorClear: handleFloorClear,
       onBossWarning: handleBossWarning,
       onGameOver: handleGameOver,
+      onPauseToggle: handlePauseToggle,
     });
     engineRef.current = engine;
     engine.start();
 
     return () => { engine.stop(); };
-  }, [handleFloorClear, handleBossWarning, handleGameOver]);
+  }, [handleFloorClear, handleBossWarning, handleGameOver, handlePauseToggle]);
 
   const hpPct = Math.max(0, (stats.hp / stats.maxHp) * 100);
   const spPct = Math.max(0, (stats.sp / stats.maxSp) * 100);
@@ -274,6 +297,97 @@ export default function GameCanvas({ onGameOver, onReturnToMenu }) {
         stats={stats}
         visible={mobileControlsOn && !showUpgrade && !showBossWarning}
       />
+
+      {/* Pause Button (top-right corner, below floor display) */}
+      {!showUpgrade && !showBossWarning && !paused && (
+        <button
+          data-testid="pause-button"
+          onClick={handlePauseClick}
+          style={{
+            position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)',
+            background: 'rgba(8,4,16,0.7)',
+            border: '1px solid #7c3aed55',
+            color: '#a855f7',
+            padding: '6px 12px',
+            fontFamily: "'JetBrains Mono', monospace",
+            fontSize: 11, letterSpacing: '0.2em',
+            cursor: 'pointer',
+            zIndex: 20,
+            textShadow: '0 0 8px #a855f7'
+          }}
+          aria-label="Pause game"
+        >
+          ❚❚ PAUSE
+        </button>
+      )}
+
+      {/* Pause Menu */}
+      {paused && (
+        <div
+          data-testid="pause-menu"
+          style={{
+            position: 'absolute', inset: 0,
+            background: 'rgba(4,2,14,0.85)',
+            backdropFilter: 'blur(10px)',
+            display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center',
+            zIndex: 60,
+            fontFamily: "'Outfit', sans-serif"
+          }}
+        >
+          <p style={{
+            color: '#a855f7', fontSize: 11, letterSpacing: '0.6em',
+            textTransform: 'uppercase', marginBottom: 12,
+            fontFamily: "'JetBrains Mono', monospace",
+            textShadow: '0 0 14px #a855f7'
+          }}>
+            THE REAPER RESTS
+          </p>
+          <h1 style={{
+            fontFamily: "'Cormorant Garamond', serif",
+            color: '#fff', fontSize: 'clamp(2.5rem, 6vw, 4rem)',
+            fontWeight: 700, margin: '0 0 40px',
+            textShadow: '0 0 28px #a855f7',
+            letterSpacing: '0.04em'
+          }}>
+            Paused
+          </h1>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 240 }}>
+            <button
+              data-testid="resume-button"
+              onClick={handleResume}
+              style={{
+                background: 'transparent', color: '#00ffcc',
+                border: '2px solid #00ffcc',
+                padding: '12px 36px', fontSize: 13,
+                fontWeight: 700, letterSpacing: '0.3em',
+                textTransform: 'uppercase', cursor: 'pointer',
+                boxShadow: '0 0 14px rgba(0,255,204,0.25)'
+              }}
+            >
+              Resume
+            </button>
+            <button
+              data-testid="pause-menu-button"
+              onClick={onReturnToMenu}
+              style={{
+                background: 'transparent', color: '#7c3aed',
+                border: '2px solid #7c3aed55',
+                padding: '12px 36px', fontSize: 13,
+                fontWeight: 700, letterSpacing: '0.3em',
+                textTransform: 'uppercase', cursor: 'pointer'
+              }}
+            >
+              Main Menu
+            </button>
+          </div>
+
+          <p style={{ color: '#ffffff33', fontSize: 10, marginTop: 36, letterSpacing: '0.2em' }}>
+            ESC / P to resume
+          </p>
+        </div>
+      )}
 
       {/* Upgrade Screen */}
       {showUpgrade && (

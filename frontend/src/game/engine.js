@@ -153,6 +153,9 @@ export class GameEngine {
         if (this.player.state === 'attacking_special' && prevState !== 'attacking_special') this.sound.playSpecialAttack();
       }
       this._prevPlayerState = this.player.state;
+    } else {
+      // Player is dead - still tick death timer so game over can fire
+      if (this.player.deathTimer > 0) this.player.deathTimer--;
     }
 
     this.resolveCombat();
@@ -417,6 +420,12 @@ export class GameEngine {
 
   setupInputs() {
     const onDown = (e) => {
+      // Pause toggle on Escape / P
+      if (e.key === 'Escape' || e.key === 'p' || e.key === 'P') {
+        if (this.callbacks.onPauseToggle) this.callbacks.onPauseToggle();
+        e.preventDefault();
+        return;
+      }
       this.keysDown.add(e.key);
       if ([' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
         e.preventDefault();

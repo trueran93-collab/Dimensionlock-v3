@@ -1,27 +1,26 @@
 import React, { useState, useEffect, useCallback } from 'react';
 
-const MAYTRADALIS_IMG = 'https://customer-assets.emergentagent.com/job_anime-deathly-rogue/artifacts/wquopldx_611d4b76933a75a5a6923ea9856fcd49.webp';
-const LURKER_IMG = 'https://customer-assets.emergentagent.com/job_anime-deathly-rogue/artifacts/t6cwtfcm_result-1768706346582-4.png';
-const MASTER_DEATH_IMG = 'https://customer-assets.emergentagent.com/job_anime-deathly-rogue/artifacts/5iwshpfm_Illustration53-11.jpg';
-const FLYBUTT_IMG = 'https://customer-assets.emergentagent.com/job_anime-deathly-rogue/artifacts/7a3boklz_Illustration12_10-1.png';
+// Clean cinematic single-character portraits.
+// Maytradalis = clean reference asset. Others = AI-generated from reference sheets.
+const MAYTRADALIS_IMG = 'https://customer-assets.emergentagent.com/job_c1138fce-9759-4254-b7df-5009813f2eea/artifacts/rqp9hfld_694daec83256ed840148d9505e779707.webp';
+const LURKER_IMG = '/intro/lurker.png';
+const MASTER_DEATH_IMG = '/intro/master_death.png';
+const FLYBUTT_IMG = '/intro/flybutt.png';
 
 const SCENES = [
-  { id: 'blackout', duration: 800 },
-  { id: 'title1', duration: 1800 },
-  { id: 'title2', duration: 1600 },
-  { id: 'scene_death', duration: 4000,
+  { id: 'scene_death', duration: 4200,
     char: 'death',
     text: '"Maytradalis... the Grim Reaper Ava has been taken into the Endless."' },
-  { id: 'scene_death2', duration: 3500,
+  { id: 'scene_death2', duration: 3800,
     char: 'death',
     text: '"The Lurker — that plagued shadow — holds her captive beyond the veil."' },
-  { id: 'scene_mayt', duration: 3500,
+  { id: 'scene_mayt', duration: 4000,
     char: 'maytradalis',
     text: '"Then I\'ll find her and bring her back. Whatever lives in the dark between... I\'ll cut through it all."' },
-  { id: 'scene_flybutt', duration: 3000,
+  { id: 'scene_flybutt', duration: 3300,
     char: 'flybutt',
     text: '"Bzzt! Flybutt knows the Endless! I\'ll guide you through the void, boss!"' },
-  { id: 'lurker', duration: 3200,
+  { id: 'lurker', duration: 3500,
     char: 'lurker',
     text: '"...The Lurker stirs in the deep dark between worlds..."' },
   { id: 'cta', duration: 99999 }
@@ -42,37 +41,72 @@ function TypewriterText({ text, speed = 28 }) {
   return <span>{displayed}</span>;
 }
 
-function TitleReveal({ text, color = '#a855f7', delay = 0 }) {
-  const [visibleCount, setVisibleCount] = useState(0);
-  useEffect(() => {
-    let i = 0;
-    const t = setTimeout(() => {
-      const interval = setInterval(() => {
-        i++;
-        setVisibleCount(i);
-        if (i >= text.length) clearInterval(interval);
-      }, 60);
-      return () => clearInterval(interval);
-    }, delay);
-    return () => clearTimeout(t);
-  }, [text, delay]);
+// Single-character cinematic portrait — clean AI-generated/asset images with
+// floating animation, soft aura glow, and parallax bobbing.
+function CharacterPortrait({ src, char }) {
+  const tuning = {
+    maytradalis: {
+      height: '78vh', width: '36vw',
+      filter: 'brightness(1.05) saturate(1.15) drop-shadow(0 0 32px rgba(168,85,247,0.6))',
+      aura: 'radial-gradient(ellipse at 50% 50%, rgba(124,58,237,0.5) 0%, transparent 65%)'
+    },
+    death: {
+      height: '78vh', width: '40vw',
+      filter: 'brightness(1.0) saturate(1.1) drop-shadow(0 0 28px rgba(0,255,204,0.55))',
+      aura: 'radial-gradient(ellipse at 50% 50%, rgba(0,200,180,0.45) 0%, transparent 65%)'
+    },
+    flybutt: {
+      height: '60vh', width: '36vw',
+      filter: 'brightness(1.08) saturate(1.4) drop-shadow(0 0 28px rgba(212,168,0,0.6))',
+      aura: 'radial-gradient(ellipse at 50% 50%, rgba(212,168,0,0.5) 0%, transparent 65%)'
+    },
+    lurker: {
+      height: '74vh', width: '40vw',
+      filter: 'brightness(1.0) saturate(1.25) contrast(1.05) drop-shadow(0 0 32px rgba(255,51,102,0.65))',
+      aura: 'radial-gradient(ellipse at 50% 50%, rgba(180,30,30,0.5) 0%, transparent 65%)'
+    }
+  };
+  const t = tuning[char] || tuning.maytradalis;
+  // Combat-ready characters get a subtle scythe-swing / breathing sway
+  const swayKey = char === 'lurker' ? 'lurkerWrithe' : char === 'flybutt' ? 'flybuttHover' : 'charFloat';
 
   return (
-    <span>
-      {text.split('').map((ch, i) => (
-        <span key={i} style={{
-          opacity: i < visibleCount ? 1 : 0,
-          transform: i < visibleCount ? 'none' : 'translateY(-10px)',
-          display: 'inline-block',
-          transition: 'all 0.3s ease',
-          color: ch === ' ' ? 'transparent' : color,
-          textShadow: i < visibleCount ? `0 0 20px ${color}, 0 0 40px ${color}66` : 'none',
-          marginRight: ch === ' ' ? '0.3em' : '0'
-        }}>
-          {ch === ' ' ? '\u00A0' : ch}
-        </span>
-      ))}
-    </span>
+    <div style={{
+      position: 'relative',
+      width: t.width,
+      height: t.height,
+      maxWidth: 760,
+      animation: `${swayKey} 4.5s ease-in-out infinite`,
+      zIndex: 1,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center'
+    }}>
+      {/* Soft aura behind */}
+      <div style={{
+        position: 'absolute', inset: '-20%',
+        background: t.aura,
+        animation: 'auraPulse 3s ease-in-out infinite',
+        pointerEvents: 'none',
+        zIndex: 0
+      }} />
+
+      <img
+        src={src}
+        alt={char}
+        draggable={false}
+        style={{
+          width: '100%',
+          height: '100%',
+          objectFit: 'contain',
+          objectPosition: 'center bottom',
+          filter: t.filter,
+          position: 'relative',
+          zIndex: 1,
+          userSelect: 'none'
+        }}
+      />
+    </div>
   );
 }
 
@@ -97,11 +131,16 @@ export default function IntroCinematic({ onComplete }) {
     return () => clearTimeout(t);
   }, [sceneIdx, scene, advance]);
 
-  const isTitle = scene.id === 'title1' || scene.id === 'title2';
-  const isBlackout = scene.id === 'blackout';
   const isScene = scene.id.startsWith('scene_');
   const isLurker = scene.id === 'lurker';
   const isCta = scene.id === 'cta';
+
+  const charSrc = {
+    maytradalis: MAYTRADALIS_IMG,
+    death: MASTER_DEATH_IMG,
+    flybutt: FLYBUTT_IMG,
+    lurker: LURKER_IMG
+  }[scene.char];
 
   return (
     <div
@@ -134,57 +173,21 @@ export default function IntroCinematic({ onComplete }) {
         ))}
       </div>
 
-      {/* Blackout: just dark */}
-      {isBlackout && <div />}
-
-      {/* TITLE REVEAL */}
-      {scene.id === 'title1' && (
-        <div style={{ textAlign: 'center', animation: 'fadeIn 0.5s ease' }}>
-          <h1 style={{
-            fontFamily: "'Cormorant Garamond', serif",
-            fontSize: 'clamp(3.5rem, 10vw, 8rem)',
-            fontWeight: 700, margin: 0,
-            letterSpacing: '0.1em'
-          }}>
-            <TitleReveal text="DIMENSIONLOCK" color="#a855f7" delay={200} />
-          </h1>
-        </div>
-      )}
-
-      {scene.id === 'title2' && (
-        <div style={{ textAlign: 'center', animation: 'fadeIn 0.4s ease' }}>
-          <h1 style={{
-            fontFamily: "'Cormorant Garamond', serif",
-            fontSize: 'clamp(3.5rem, 10vw, 8rem)',
-            fontWeight: 700, margin: '0 0 12px',
-            letterSpacing: '0.1em',
-            color: '#a855f7',
-            textShadow: '0 0 40px #a855f7, 0 0 80px #7c3aed44'
-          }}>
-            DIMENSIONLOCK
-          </h1>
-          <h2 style={{
-            fontFamily: "'Cormorant Garamond', serif",
-            fontWeight: 400, fontStyle: 'italic',
-            margin: 0, letterSpacing: '0.5em',
-            fontSize: 'clamp(1.2rem, 3vw, 2.5rem)',
-          }}>
-            <TitleReveal text="DEATHLY STORIES" color="#ff3366" delay={300} />
-          </h2>
-        </div>
-      )}
-
       {/* DIALOGUE SCENES */}
       {(isScene || isLurker) && (
-        <div style={{
-          position: 'relative', width: '100%', height: '100%',
-          display: 'flex', flexDirection: 'column',
-          animation: 'fadeIn 0.6s ease'
-        }}>
+        <div
+          key={scene.id}
+          style={{
+            position: 'relative', width: '100%', height: '100%',
+            display: 'flex', flexDirection: 'column',
+            animation: 'fadeIn 0.6s ease'
+          }}
+        >
           {/* Character portrait area */}
           <div style={{
             flex: 1, display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
-            position: 'relative', overflow: 'hidden'
+            position: 'relative', overflow: 'hidden',
+            paddingBottom: 32
           }}>
             {/* Background color wash */}
             <div style={{
@@ -198,72 +201,7 @@ export default function IntroCinematic({ onComplete }) {
                     : 'radial-gradient(circle at 50% 60%, #060a00 0%, #000 70%)'
             }} />
 
-            {/* Character images */}
-            {scene.char === 'maytradalis' && (
-              <img src={MAYTRADALIS_IMG} alt="Maytradalis"
-                style={{
-                  height: '70vh', objectFit: 'contain',
-                  mixBlendMode: 'screen',
-                  filter: 'brightness(1.1) saturate(1.2)',
-                  position: 'relative', zIndex: 1
-                }}
-              />
-            )}
-            {scene.char === 'death' && (
-              <div style={{ position: 'relative', height: '70vh', display: 'flex', alignItems: 'flex-end' }}>
-                <div style={{
-                  position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)',
-                  width: '85%', height: '100%',
-                  background: 'radial-gradient(ellipse at 50% 40%, rgba(20,30,25,0.8) 30%, transparent 75%)',
-                  zIndex: 0
-                }} />
-                <img src={MASTER_DEATH_IMG} alt="Master Death"
-                  style={{
-                    height: '70vh', objectFit: 'contain',
-                    mixBlendMode: 'multiply',
-                    filter: 'brightness(0.6) contrast(1.3) saturate(0.7) sepia(0.2)',
-                    position: 'relative', zIndex: 1
-                  }}
-                />
-              </div>
-            )}
-            {scene.char === 'flybutt' && (
-              <div style={{ position: 'relative', height: '55vh', display: 'flex', alignItems: 'flex-end' }}>
-                <div style={{
-                  position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)',
-                  width: '80%', height: '90%',
-                  background: 'radial-gradient(ellipse at 50% 50%, rgba(40,35,0,0.7) 20%, transparent 70%)',
-                  zIndex: 0
-                }} />
-                <img src={FLYBUTT_IMG} alt="Flybutt"
-                  style={{
-                    height: '55vh', objectFit: 'contain',
-                    mixBlendMode: 'multiply',
-                    filter: 'brightness(0.65) saturate(1.8)',
-                    position: 'relative', zIndex: 1
-                  }}
-                />
-              </div>
-            )}
-            {scene.char === 'lurker' && (
-              <div style={{ position: 'relative', height: '65vh', display: 'flex', alignItems: 'flex-end' }}>
-                <div style={{
-                  position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)',
-                  width: '90%', height: '100%',
-                  background: 'radial-gradient(ellipse at 50% 50%, rgba(60,0,0,0.5) 20%, transparent 70%)',
-                  zIndex: 0
-                }} />
-                <img src={LURKER_IMG} alt="The Lurker"
-                  style={{
-                    height: '65vh', objectFit: 'contain',
-                    mixBlendMode: 'multiply',
-                    filter: 'brightness(0.55) saturate(2) contrast(1.4) hue-rotate(-15deg)',
-                    position: 'relative', zIndex: 1,
-                    animation: 'lurkerPulse 2s ease-in-out infinite'
-                  }}
-                />
-              </div>
-            )}
+            <CharacterPortrait src={charSrc} char={scene.char} />
           </div>
 
           {/* Dialogue box */}
@@ -317,24 +255,17 @@ export default function IntroCinematic({ onComplete }) {
         </div>
       )}
 
-      {/* CTA */}
+      {/* CTA — clean button without title duplicate (main menu owns the title reveal) */}
       {isCta && (
         <div style={{ textAlign: 'center', animation: 'fadeIn 0.8s ease' }}>
-          <h1 style={{
-            fontFamily: "'Cormorant Garamond', serif",
-            color: '#fff', fontSize: 'clamp(2rem, 5vw, 4rem)',
-            fontWeight: 700, marginBottom: 16,
-            textShadow: '0 0 30px #a855f7'
-          }}>
-            DIMENSIONLOCK
-          </h1>
           <p style={{
-            color: '#a855f7', fontSize: 14,
-            letterSpacing: '0.4em', textTransform: 'uppercase',
+            color: '#a855f7', fontSize: 12,
+            letterSpacing: '0.5em', textTransform: 'uppercase',
             fontFamily: "'JetBrains Mono', monospace",
-            marginBottom: 48
+            marginBottom: 36,
+            textShadow: '0 0 14px #a855f7'
           }}>
-            Deathly Stories
+            The Endless awaits…
           </p>
           <button
             data-testid="begin-adventure-button"
@@ -351,7 +282,7 @@ export default function IntroCinematic({ onComplete }) {
             onMouseEnter={e => { e.target.style.background = '#00ffcc'; e.target.style.color = '#000'; }}
             onMouseLeave={e => { e.target.style.background = 'transparent'; e.target.style.color = '#00ffcc'; }}
           >
-            BEGIN YOUR JOURNEY
+            Continue
           </button>
           <p style={{ color: '#ffffff33', fontSize: 11, marginTop: 24, letterSpacing: '0.2em' }}>
             or press any key
@@ -360,12 +291,12 @@ export default function IntroCinematic({ onComplete }) {
       )}
 
       {/* Skip button */}
-      {!isCta && !isBlackout && (
+      {!isCta && (
         <button
           data-testid="skip-intro-button"
           onClick={(e) => { e.stopPropagation(); setFadeOut(true); setTimeout(onComplete, 500); }}
           style={{
-            position: 'absolute', bottom: isScene || isLurker ? 140 : 24, right: 24,
+            position: 'absolute', bottom: 140, right: 24,
             background: 'transparent', color: '#ffffff33',
             border: '1px solid #ffffff22', padding: '6px 16px',
             fontSize: 11, letterSpacing: '0.2em', textTransform: 'uppercase',
@@ -382,9 +313,25 @@ export default function IntroCinematic({ onComplete }) {
       <style>{`
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes tw { from { opacity: 0.1; } to { opacity: 0.7; } }
-        @keyframes lurkerPulse {
-          0%, 100% { transform: scale(1); filter: brightness(0.7) saturate(1.5); }
-          50% { transform: scale(1.03); filter: brightness(0.5) saturate(2) hue-rotate(-20deg); }
+        @keyframes charFloat {
+          0%, 100% { transform: translateY(0) rotate(0deg); }
+          50% { transform: translateY(-14px) rotate(-0.6deg); }
+        }
+        @keyframes flybuttHover {
+          0%, 100% { transform: translate(0, 0) rotate(-2deg); }
+          25%      { transform: translate(8px, -8px) rotate(2deg); }
+          50%      { transform: translate(-6px, -16px) rotate(-1deg); }
+          75%      { transform: translate(-8px, -6px) rotate(3deg); }
+        }
+        @keyframes lurkerWrithe {
+          0%, 100% { transform: translateY(0) scale(1); filter: brightness(1); }
+          25%      { transform: translateY(-8px) scale(1.015) skewX(0.6deg); }
+          50%      { transform: translateY(-4px) scale(1.03) skewX(-0.8deg); }
+          75%      { transform: translateY(-10px) scale(1.01) skewX(0.4deg); }
+        }
+        @keyframes auraPulse {
+          0%, 100% { opacity: 0.7; transform: scale(1); }
+          50% { opacity: 1; transform: scale(1.08); }
         }
       `}</style>
     </div>

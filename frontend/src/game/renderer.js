@@ -161,12 +161,12 @@ export class Renderer {
 
     // ── Distant cyberpunk skyline (far parallax) ─────────────────────────
     ctx.save();
-    ctx.globalAlpha = 0.6;
+    ctx.globalAlpha = 0.55;
     const skylineY = 460;
     const farOffset = (frame * 0.15) % 80;
     ctx.fillStyle = '#050314';
     ctx.shadowColor = T.neon;
-    ctx.shadowBlur = 8;
+    ctx.shadowBlur = 6;
     for (let bx = -80; bx < 1360; bx += 60) {
       const seed = Math.sin(bx * 0.07) * 0.5 + 0.5;
       const bh = 60 + seed * 110;
@@ -174,7 +174,7 @@ export class Renderer {
       ctx.fillRect(bx - farOffset, skylineY - bh, wbar, bh);
       // window lights
       ctx.shadowBlur = 0;
-      ctx.fillStyle = T.neon + '88';
+      ctx.fillStyle = T.neon + '99';
       for (let wy = skylineY - bh + 10; wy < skylineY - 6; wy += 14) {
         if ((Math.sin(bx + wy * 0.3 + frame * 0.02) > 0.3)) {
           ctx.fillRect(bx - farOffset + 4, wy, 3, 3);
@@ -182,7 +182,7 @@ export class Renderer {
         }
       }
       ctx.fillStyle = '#050314';
-      ctx.shadowBlur = 8;
+      ctx.shadowBlur = 6;
     }
     ctx.restore();
 
@@ -237,31 +237,143 @@ export class Renderer {
     }
     ctx.restore();
 
-    // ── Neon grid horizon (cyberpunk floor) ──────────────────────────────
+    // ── Foreground cyberpunk-gothic street infrastructure ────────────────
+    // Tall buildings + neon signs + street lamps (closer parallax)
     ctx.save();
-    ctx.globalAlpha = 0.35;
-    ctx.strokeStyle = T.neon;
-    ctx.shadowColor = T.neon;
-    ctx.shadowBlur = 10;
-    ctx.lineWidth = 1;
-    // Vanishing point horizontal lines
-    for (let i = 0; i < 8; i++) {
-      const y = 590 + i * (i * 2 + 4);
-      if (y > 700) break;
+    const nearOffset = (frame * 0.6) % 320;
+    const buildingPositions = [-60, 180, 470, 760, 1050, 1340];
+    for (let bi = 0; bi < buildingPositions.length; bi++) {
+      const bx = buildingPositions[bi] - nearOffset;
+      const baseY = 600;
+      const heightSeed = (bi % 3 === 0) ? 220 : (bi % 3 === 1 ? 160 : 280);
+      const bw = 110;
+
+      // Building body
+      ctx.fillStyle = '#08051c';
+      ctx.shadowColor = T.stained;
+      ctx.shadowBlur = 22;
+      ctx.fillRect(bx, baseY - heightSeed, bw, heightSeed);
+
+      // Sharp gothic peak
       ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(1280, y);
+      ctx.moveTo(bx, baseY - heightSeed);
+      ctx.lineTo(bx + bw / 2, baseY - heightSeed - 28);
+      ctx.lineTo(bx + bw, baseY - heightSeed);
+      ctx.closePath();
+      ctx.fill();
+
+      // Vertical accent strip
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = T.neon + 'aa';
+      ctx.fillRect(bx + bw / 2 - 1, baseY - heightSeed + 10, 2, heightSeed - 14);
+
+      // Neon window grid (cyberpunk apartment lights)
+      ctx.shadowBlur = 8;
+      for (let wy = baseY - heightSeed + 24; wy < baseY - 12; wy += 22) {
+        for (let wx = bx + 12; wx < bx + bw - 12; wx += 22) {
+          const lit = Math.sin(wx * 0.13 + wy * 0.21 + frame * 0.015) > 0.1;
+          ctx.fillStyle = lit ? T.neon + 'cc' : '#0a0628';
+          ctx.fillRect(wx, wy, 7, 9);
+        }
+      }
+
+      // Hanging neon sign every other building
+      if (bi % 2 === 1) {
+        ctx.shadowColor = T.accent;
+        ctx.shadowBlur = 18;
+        ctx.fillStyle = T.accent + 'cc';
+        const sgnX = bx + bw / 2 - 18;
+        const sgnY = baseY - heightSeed / 2;
+        ctx.fillRect(sgnX, sgnY, 36, 10);
+        // Hanger arms
+        ctx.strokeStyle = '#222';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(bx, sgnY - 6);
+        ctx.lineTo(sgnX, sgnY + 4);
+        ctx.moveTo(bx + bw, sgnY - 6);
+        ctx.lineTo(sgnX + 36, sgnY + 4);
+        ctx.stroke();
+        // Sign glyph
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#000';
+        ctx.fillRect(sgnX + 4, sgnY + 3, 4, 4);
+        ctx.fillRect(sgnX + 14, sgnY + 3, 4, 4);
+        ctx.fillRect(sgnX + 24, sgnY + 3, 4, 4);
+      }
+
+      // Roof antenna / cross
+      ctx.shadowColor = T.accent;
+      ctx.shadowBlur = 14;
+      ctx.strokeStyle = '#0a0a0f';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(bx + bw / 2, baseY - heightSeed - 28);
+      ctx.lineTo(bx + bw / 2, baseY - heightSeed - 56);
+      ctx.moveTo(bx + bw / 2 - 8, baseY - heightSeed - 46);
+      ctx.lineTo(bx + bw / 2 + 8, baseY - heightSeed - 46);
       ctx.stroke();
+      // Antenna red blinker
+      const blink = Math.sin(frame * 0.18 + bi) > 0;
+      ctx.shadowColor = '#ff3366';
+      ctx.shadowBlur = blink ? 16 : 4;
+      ctx.fillStyle = blink ? '#ff3366' : '#330011';
+      ctx.beginPath();
+      ctx.arc(bx + bw / 2, baseY - heightSeed - 58, 2, 0, Math.PI * 2);
+      ctx.fill();
     }
-    // Perspective vertical lines toward vanishing point
-    const vpX = 640, vpY = 590;
-    const gridOffset = (frame * 1.2) % 60;
-    for (let i = -10; i <= 10; i++) {
-      const startX = vpX + i * 80 + gridOffset;
+    ctx.restore();
+
+    // ── Street lampposts on ground (very close parallax) ─────────────────
+    ctx.save();
+    const lampOffset = (frame * 1.1) % 400;
+    const lampPositions = [60, 460, 860, 1260, 1660];
+    for (const lx of lampPositions) {
+      const x = lx - lampOffset;
+      if (x < -40 || x > 1320) continue;
+      const groundY = 670;
+      // Pole
+      ctx.strokeStyle = '#0a0815';
+      ctx.lineWidth = 4;
+      ctx.shadowColor = T.neon;
+      ctx.shadowBlur = 6;
       ctx.beginPath();
-      ctx.moveTo(startX, vpY);
-      ctx.lineTo(vpX + (startX - vpX) * 5, 720);
+      ctx.moveTo(x, groundY);
+      ctx.lineTo(x, groundY - 110);
       ctx.stroke();
+      // Top curl (gothic ironwork)
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(x, groundY - 110);
+      ctx.quadraticCurveTo(x + 10, groundY - 125, x + 22, groundY - 118);
+      ctx.stroke();
+      // Lamp housing
+      ctx.fillStyle = '#0a0815';
+      ctx.beginPath();
+      ctx.ellipse(x + 22, groundY - 110, 7, 9, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // Glowing bulb
+      ctx.shadowColor = T.accent;
+      ctx.shadowBlur = 26;
+      const flicker = 0.85 + 0.15 * Math.sin(frame * 0.4 + x);
+      ctx.globalAlpha = flicker;
+      ctx.fillStyle = T.accent;
+      ctx.beginPath();
+      ctx.arc(x + 22, groundY - 107, 4, 0, Math.PI * 2);
+      ctx.fill();
+      // Light cone on ground
+      ctx.globalAlpha = 0.18 * flicker;
+      const cone = ctx.createRadialGradient(x + 22, groundY - 100, 5, x + 22, groundY + 40, 90);
+      cone.addColorStop(0, T.accent);
+      cone.addColorStop(1, 'transparent');
+      ctx.fillStyle = cone;
+      ctx.beginPath();
+      ctx.moveTo(x + 22, groundY - 100);
+      ctx.lineTo(x - 38, groundY + 60);
+      ctx.lineTo(x + 82, groundY + 60);
+      ctx.closePath();
+      ctx.fill();
+      ctx.globalAlpha = 1;
     }
     ctx.restore();
 
@@ -418,7 +530,7 @@ export class Renderer {
       ctx.fillStyle = '#00ffcc';
       const shadowX = x - player.dashDir * 25;
       if (SPRITES.maytradalis?.loaded) {
-        SPRITES.maytradalis.draw(ctx, spriteFrame, shadowX - SPRITE_SIZE * 0.15, y - 20, SPRITE_SIZE, SPRITE_SIZE, !facingRight);
+        SPRITES.maytradalis.draw(ctx, spriteFrame, shadowX - SPRITE_SIZE * 0.15, y - 20, SPRITE_SIZE, SPRITE_SIZE, facingRight);
       }
       ctx.restore();
     }
@@ -429,7 +541,7 @@ export class Renderer {
     let drewSprite = false;
 
     if (SPRITES.maytradalis?.loaded && !SPRITES.maytradalis?.error) {
-      drewSprite = SPRITES.maytradalis.draw(ctx, spriteFrame, spriteX, spriteY, SPRITE_SIZE, SPRITE_SIZE, !facingRight);
+      drewSprite = SPRITES.maytradalis.draw(ctx, spriteFrame, spriteX, spriteY, SPRITE_SIZE, SPRITE_SIZE, facingRight);
     }
 
     if (!drewSprite) {
