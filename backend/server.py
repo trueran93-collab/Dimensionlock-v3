@@ -2,12 +2,12 @@ from fastapi import FastAPI, APIRouter
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+from contextlib import asynccontextmanager
 import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field
-from typing import List, Optional, Annotated
-from bson import ObjectId
+from typing import List
 import uuid
 from datetime import datetime, timezone
 
@@ -18,7 +18,12 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-app = FastAPI(title="Dimensionlock: The Endless API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    client.close()
+
+app = FastAPI(title="Dimensionlock: The Endless API", lifespan=lifespan)
 api_router = APIRouter(prefix="/api")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -83,8 +88,3 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()

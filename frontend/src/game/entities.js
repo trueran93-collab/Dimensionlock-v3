@@ -61,6 +61,8 @@ export class Player {
     this.kills = 0;
     this.score = 0;
     this.floorsCleared = 0;
+    // Spawn invincibility
+    this.hurtTimer = 60;
   }
 
   update(keys, platforms, engine) {
@@ -309,7 +311,7 @@ class Enemy {
     this.damage = config.damage || 12;
     this.detectionRange = config.detectionRange || 450;
     this.attackRange = config.attackRange || 55;
-    this.attackCooldown = 0;
+    this.attackCooldown = 60; // spawn grace period
     this.hurtTimer = 0;
     this.knockTimer = 0;
     this.state = 'patrol';
