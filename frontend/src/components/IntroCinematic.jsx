@@ -399,7 +399,8 @@ function AnimatedCharCanvas({ char }) {
     canvas.width  = 600;
     canvas.height = 800;
 
-    const ctx = canvas.getContext('2d');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const ctx = canvas.getContext('2d', { willReadFrequently: false });
     let rafId;
     let frame = 0;
     const W = 600, H = 800;
