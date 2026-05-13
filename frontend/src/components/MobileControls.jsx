@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 
 /**
  * On-screen touch controls.
@@ -60,11 +60,25 @@ export default function MobileControls({ engineRef, stats, visible }) {
     if (engineRef.current) engineRef.current.setTouch(action, value);
   };
 
+  // Track viewport for adaptive button sizing
+  const [vw, setVw] = useState(typeof window !== 'undefined' ? window.innerWidth : 1280);
+  useEffect(() => {
+    const onResize = () => setVw(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   if (!visible) return null;
 
   const ultimateReady = stats.ultimateCharge >= stats.maxUltimateCharge;
   const specialReady = stats.sp >= 30;
   const dashReady = stats.dashCooldown <= 0;
+
+  // Scale: 1 on large phones/tablets, 0.78 on small (~360px wide)
+  const btnSize = vw < 380 ? 0.78 : vw < 520 ? 0.88 : 1;
+  const btnGap = vw < 380 ? 6 : 8;
+  const edgeInset = vw < 380 ? 8 : 12;
+  const bottomInset = vw < 380 ? 36 : 60;
 
   return (
     <div
@@ -77,8 +91,8 @@ export default function MobileControls({ engineRef, stats, visible }) {
     >
       {/* Left side: D-pad */}
       <div style={{
-        position: 'absolute', left: 12, bottom: 60,
-        display: 'flex', gap: 10,
+        position: 'absolute', left: edgeInset, bottom: bottomInset,
+        display: 'flex', gap: btnGap,
         pointerEvents: 'auto'
       }}>
         <HoldButton
@@ -88,6 +102,7 @@ export default function MobileControls({ engineRef, stats, visible }) {
           onPress={() => send('left', true)}
           onRelease={() => send('left', false)}
           large
+          size={btnSize}
         />
         <HoldButton
           label="▶"
@@ -96,16 +111,17 @@ export default function MobileControls({ engineRef, stats, visible }) {
           onPress={() => send('right', true)}
           onRelease={() => send('right', false)}
           large
+          size={btnSize}
         />
       </div>
 
       {/* Right side: Action buttons - 2 rows x 3 cols */}
       <div style={{
-        position: 'absolute', right: 10, bottom: 60,
+        position: 'absolute', right: edgeInset, bottom: bottomInset,
         display: 'grid',
         gridTemplateColumns: 'repeat(3, auto)',
         gridTemplateRows: 'repeat(2, auto)',
-        gap: 8,
+        gap: btnGap,
         pointerEvents: 'auto',
         alignItems: 'center',
         justifyItems: 'center'
@@ -117,6 +133,7 @@ export default function MobileControls({ engineRef, stats, visible }) {
           testId="mobile-jump"
           onPress={() => send('jumpPressed', true)}
           onRelease={() => send('jumpPressed', false)}
+          size={btnSize}
         />
         <HoldButton
           label="DASH"
@@ -125,6 +142,7 @@ export default function MobileControls({ engineRef, stats, visible }) {
           testId="mobile-dash"
           onPress={() => send('dashPressed', true)}
           onRelease={() => send('dashPressed', false)}
+          size={btnSize}
         />
         <HoldButton
           label="ULT"
@@ -135,6 +153,7 @@ export default function MobileControls({ engineRef, stats, visible }) {
           onPress={() => send('ultimatePressed', true)}
           onRelease={() => send('ultimatePressed', false)}
           large
+          size={btnSize}
         />
         {/* Row 2: LIGHT, HEAVY, DARK */}
         <HoldButton
@@ -143,6 +162,7 @@ export default function MobileControls({ engineRef, stats, visible }) {
           testId="mobile-light"
           onPress={() => send('lightPressed', true)}
           onRelease={() => send('lightPressed', false)}
+          size={btnSize}
         />
         <HoldButton
           label="HEAVY"
@@ -150,6 +170,7 @@ export default function MobileControls({ engineRef, stats, visible }) {
           testId="mobile-heavy"
           onPress={() => send('heavyPressed', true)}
           onRelease={() => send('heavyPressed', false)}
+          size={btnSize}
         />
         <HoldButton
           label="DARK"
@@ -159,6 +180,7 @@ export default function MobileControls({ engineRef, stats, visible }) {
           testId="mobile-special"
           onPress={() => send('specialPressed', true)}
           onRelease={() => send('specialPressed', false)}
+          size={btnSize}
         />
       </div>
     </div>

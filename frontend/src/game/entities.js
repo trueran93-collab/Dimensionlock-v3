@@ -4,7 +4,7 @@ const MAX_FALL = 18;
 export class Player {
   constructor(x, y) {
     this.x = x; this.y = y;
-    this.w = 44; this.h = 72;
+    this.w = 56; this.h = 92;
     this.vx = 0; this.vy = 0;
     this.facingRight = true;
 
@@ -255,22 +255,22 @@ export class Player {
 
     if (this.attackType === 'light') {
       if (this.attackTimer < 5 || this.attackTimer > 15) return null;
-      const range = 72 * this.attackRange;
+      const range = 88 * this.attackRange;
       return {
         x: this.facingRight ? this.x + this.w - 4 : this.x - range + 4,
-        y: this.y + 4,
-        w: range, h: 56,
+        y: this.y + 6,
+        w: range, h: 72,
         damage: Math.floor(this.damage * this._comboMult()),
         type: 'light', knockback: 5 * dir
       };
     }
     if (this.attackType === 'heavy') {
       if (this.attackTimer > 28 || this.attackTimer < 6) return null;
-      const range = 95 * this.attackRange;
+      const range = 120 * this.attackRange;
       return {
         x: cx - range / 2,
-        y: this.y - 14,
-        w: range, h: 90,
+        y: this.y - 18,
+        w: range, h: 118,
         damage: Math.floor(this.damage * 2.6 * this._comboMult()),
         type: 'heavy', knockback: 11 * dir
       };
@@ -480,11 +480,11 @@ class Enemy {
 export class ShadowDemon extends Enemy {
   constructor(x, y, scale = 1) {
     super(x, y, {
-      w: 40, h: 62,
+      w: 50, h: 78,
       hp: Math.floor(50 * scale),
       speed: 2.2 + scale * 0.4,
       damage: Math.floor(12 * scale),
-      attackRange: 52,
+      attackRange: 64,
       type: 'shadow_demon',
       score: 25
     });
@@ -517,11 +517,11 @@ export class ShadowDemon extends Enemy {
 export class VoidSprite extends Enemy {
   constructor(x, y, scale = 1) {
     super(x, y, {
-      w: 28, h: 28,
+      w: 36, h: 36,
       hp: Math.floor(25 * scale),
       speed: 3.5 + scale * 0.5,
       damage: Math.floor(8 * scale),
-      attackRange: 35,
+      attackRange: 42,
       type: 'void_sprite',
       score: 15
     });
@@ -575,7 +575,7 @@ export class VoidSprite extends Enemy {
 export class DimensionWatcher extends Enemy {
   constructor(x, y, scale = 1) {
     super(x, y, {
-      w: 44, h: 44,
+      w: 56, h: 56,
       hp: Math.floor(65 * scale),
       speed: 1.2,
       damage: Math.floor(14 * scale),
@@ -638,11 +638,11 @@ export class DimensionWatcher extends Enemy {
 export class LurkerCultist extends Enemy {
   constructor(x, y, scale = 1) {
     super(x, y, {
-      w: 36, h: 68,
+      w: 46, h: 86,
       hp: Math.floor(85 * scale),
       speed: 2.8 + scale * 0.3,
       damage: Math.floor(18 * scale),
-      attackRange: 58,
+      attackRange: 70,
       type: 'lurker_cultist',
       score: 50
     });
@@ -685,11 +685,11 @@ export class LurkerCultist extends Enemy {
 export class BossServant extends Enemy {
   constructor(x, y, scale = 1) {
     super(x, y, {
-      w: 80, h: 110,
+      w: 100, h: 138,
       hp: Math.floor(600 * scale),
       speed: 2,
       damage: Math.floor(22 * scale),
-      attackRange: 100,
+      attackRange: 120,
       detectionRange: 9999,
       type: 'boss',
       score: 500
@@ -1000,5 +1000,320 @@ export class SoulSeed {
     if (dist < 28) {
       this.collecting = true;
     }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── NEW DEMONIC ENTITY TYPES ─────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── Plague Imp ──────────────────────────────────────────────────────────────
+// Fast ground dasher. Periodically winds up a charge attack and rushes the player.
+
+export class PlagueImp extends Enemy {
+  constructor(x, y, scale = 1) {
+    super(x, y, {
+      w: 40, h: 54,
+      hp: Math.floor(40 * scale),
+      speed: 3.2 + scale * 0.5,
+      damage: Math.floor(14 * scale),
+      attackRange: 60,
+      type: 'plague_imp',
+      score: 30
+    });
+    this.chargeWindup = 0;
+    this.chargeTimer = 0;
+    this.chargeDir = 1;
+  }
+
+  ai(player, engine) {
+    const { dx, dist } = this._distToPlayer(player);
+    this.facingRight = dx > 0;
+
+    // Charge attack in progress
+    if (this.chargeTimer > 0) {
+      this.vx = this.chargeDir * 11;
+      this.chargeTimer--;
+      if (Math.abs(dx) < this.attackRange && this.attackCooldown <= 0) {
+        this.attackCooldown = 60;
+        engine.dealEnemyDamage(player, this.damage, engine);
+        engine.particles.burst(player.x + player.w / 2, player.y + player.h / 2, 'void_hit');
+      }
+      return;
+    }
+
+    // Wind-up animation
+    if (this.chargeWindup > 0) {
+      this.chargeWindup--;
+      this.vx *= 0.65;
+      if (this.chargeWindup === 0) {
+        this.chargeTimer = 26;
+        this.chargeDir = dx > 0 ? 1 : -1;
+        engine.particles.burst(this.x + this.w / 2, this.y + this.h, 'smoke');
+        if (engine.sound?.playEnemyCharge) engine.sound.playEnemyCharge();
+      }
+      return;
+    }
+
+    if (dist < this.detectionRange) {
+      // Approach
+      if (dist > this.attackRange + 20) {
+        this.vx = (dx > 0 ? 1 : -1) * this.speed;
+      } else {
+        this.vx *= 0.7;
+        if (this.attackCooldown <= 0 && Math.random() < 0.045) {
+          this.chargeWindup = 22; // wind up
+          this.attackCooldown = 150;
+        }
+      }
+    } else {
+      this.vx = this.patrolDir * (this.speed * 0.5);
+      this.patrolTimer--;
+      if (this.patrolTimer <= 0) { this.patrolTimer = 80; this.patrolDir *= -1; }
+    }
+  }
+}
+
+// ─── Shadow Crawler ──────────────────────────────────────────────────────────
+// Low ground-hugger. Very fast, low HP, attacks by lunging.
+
+export class ShadowCrawler extends Enemy {
+  constructor(x, y, scale = 1) {
+    super(x, y, {
+      w: 56, h: 30,
+      hp: Math.floor(30 * scale),
+      speed: 4.2 + scale * 0.5,
+      damage: Math.floor(10 * scale),
+      attackRange: 56,
+      type: 'shadow_crawler',
+      score: 22
+    });
+    this.lungeTimer = 0;
+  }
+
+  ai(player, engine) {
+    const { dx, dist } = this._distToPlayer(player);
+    this.facingRight = dx > 0;
+
+    if (this.lungeTimer > 0) {
+      this.lungeTimer--;
+      this.vx = (this.facingRight ? 1 : -1) * 9;
+      if (this.attackCooldown <= 0 && Math.abs(dx) < this.attackRange) {
+        this.attackCooldown = 50;
+        engine.dealEnemyDamage(player, this.damage, engine);
+      }
+      return;
+    }
+
+    if (dist < this.detectionRange) {
+      if (dist > this.attackRange + 8) {
+        this.vx = (dx > 0 ? 1 : -1) * this.speed;
+      } else if (this.attackCooldown <= 0) {
+        // Lunge!
+        this.lungeTimer = 14;
+        this.vy = -7;
+        this.attackCooldown = 75;
+        engine.particles.burst(this.x + this.w / 2, this.y + this.h, 'smoke');
+      }
+    } else {
+      this.vx = this.patrolDir * (this.speed * 0.4);
+      this.patrolTimer--;
+      if (this.patrolTimer <= 0) { this.patrolTimer = 70; this.patrolDir *= -1; }
+    }
+  }
+}
+
+// ─── Ember Wraith ────────────────────────────────────────────────────────────
+// Floating projectile-flinger. Lobs fire balls at the player.
+
+export class EmberWraith extends Enemy {
+  constructor(x, y, scale = 1) {
+    super(x, y, {
+      w: 42, h: 52,
+      hp: Math.floor(45 * scale),
+      speed: 1.6,
+      damage: Math.floor(12 * scale),
+      attackRange: 420,
+      detectionRange: 550,
+      type: 'ember_wraith',
+      score: 38
+    });
+    this.floatOffset = Math.random() * Math.PI * 2;
+  }
+
+  update(player, platforms, engine) {
+    if (this.dead) return;
+    if (this.poisonTimer > 0) {
+      this.poisonTimer--;
+      if (this.poisonTimer % 60 === 0) { this.hp -= 5; if (this.hp <= 0) { this._die(engine); return; } }
+    }
+    this.floatOffset += 0.05;
+    this.vy = Math.sin(this.floatOffset) * 0.6;
+    this.x += this.vx; this.y += this.vy;
+    if (this.x < 20) { this.x = 20; this.patrolDir = 1; }
+    if (this.x + this.w > engine.W - 20) { this.x = engine.W - this.w - 20; this.patrolDir = -1; }
+    this.ai(player, engine);
+    if (this.attackCooldown > 0) this.attackCooldown--;
+    if (this.hurtTimer > 0) this.hurtTimer--;
+    if (this.knockTimer > 0) this.knockTimer--;
+    this.animTimer++;
+    if (this.animTimer >= 8) { this.animTimer = 0; this.animFrame++; }
+  }
+
+  ai(player, engine) {
+    const { dx, dy, dist } = this._distToPlayer(player);
+    this.facingRight = dx > 0;
+    if (dist < this.detectionRange) {
+      // Maintain distance
+      if (dist < 220) this.vx += (dx > 0 ? -0.06 : 0.06);
+      else this.vx += (dx > 0 ? 0.04 : -0.04);
+      if (Math.abs(this.vx) > this.speed) this.vx = Math.sign(this.vx) * this.speed;
+
+      if (dist < this.attackRange && this.attackCooldown <= 0) {
+        this.attackCooldown = 95;
+        const angle = Math.atan2(dy, dx);
+        engine.addProjectile({
+          x: this.x + this.w / 2, y: this.y + this.h / 2,
+          vx: Math.cos(angle) * 6, vy: Math.sin(angle) * 6,
+          damage: this.damage, owner: 'enemy',
+          life: 110, color: '#ff6b1a', size: 9,
+          glow: '#fbbf24'
+        });
+        engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'sparks');
+        if (engine.sound?.playProjectileFire) engine.sound.playProjectileFire();
+      }
+    } else {
+      this.vx *= 0.9;
+    }
+  }
+}
+
+// ─── Bone Howler ─────────────────────────────────────────────────────────────
+// Stationary-ish summoner. Periodically howls and spawns void sprites.
+
+export class BoneHowler extends Enemy {
+  constructor(x, y, scale = 1) {
+    super(x, y, {
+      w: 54, h: 80,
+      hp: Math.floor(110 * scale),
+      speed: 1.0,
+      damage: Math.floor(8 * scale),
+      attackRange: 70,
+      detectionRange: 600,
+      type: 'bone_howler',
+      score: 60
+    });
+    this.summonCooldown = 220 + Math.floor(Math.random() * 90);
+    this.howlTimer = 0;
+    this._scale = scale;
+  }
+
+  ai(player, engine) {
+    const { dx, dist } = this._distToPlayer(player);
+    this.facingRight = dx > 0;
+
+    // Howl + summon
+    if (this.howlTimer > 0) {
+      this.howlTimer--;
+      this.vx *= 0.4;
+      if (this.howlTimer === 0) {
+        // Spawn 2 void sprites near self
+        const baseX = this.x + this.w / 2;
+        for (let i = 0; i < 2; i++) {
+          const offset = (i === 0 ? -50 : 50);
+          const sprite = new VoidSprite(baseX + offset, this.y - 20, this._scale);
+          engine.enemies.push(sprite);
+          engine.particles.burst(baseX + offset, this.y, 'dark_aura');
+        }
+        if (engine.sound?.playSummon) engine.sound.playSummon();
+      }
+      return;
+    }
+
+    if (dist < this.detectionRange) {
+      // Slow retreat to maintain distance
+      if (dist < 180) this.vx = (dx > 0 ? -1 : 1) * this.speed;
+      else this.vx *= 0.85;
+
+      this.summonCooldown--;
+      if (this.summonCooldown <= 0 && engine.enemies.length < 8) {
+        this.summonCooldown = 280;
+        this.howlTimer = 30;
+        engine.particles.burst(this.x + this.w / 2, this.y + this.h / 3, 'sparks');
+      }
+
+      if (dist < this.attackRange && this.attackCooldown <= 0) {
+        this.attackCooldown = 100;
+        engine.dealEnemyDamage(player, this.damage, engine);
+      }
+    } else {
+      this.vx *= 0.9;
+    }
+  }
+}
+
+// ─── Hex Beast ───────────────────────────────────────────────────────────────
+// Tank with parry phase — every few seconds becomes momentarily invulnerable
+// and reflects damage. Slow but heavy hits.
+
+export class HexBeast extends Enemy {
+  constructor(x, y, scale = 1) {
+    super(x, y, {
+      w: 62, h: 80,
+      hp: Math.floor(130 * scale),
+      speed: 1.8,
+      damage: Math.floor(22 * scale),
+      attackRange: 80,
+      type: 'hex_beast',
+      score: 70
+    });
+    this.shieldTimer = 0;
+    this.shieldCooldown = 240 + Math.floor(Math.random() * 60);
+  }
+
+  ai(player, engine) {
+    const { dx, dist } = this._distToPlayer(player);
+    this.facingRight = dx > 0;
+
+    // Manage shield phase
+    this.shieldCooldown--;
+    if (this.shieldCooldown <= 0 && this.shieldTimer <= 0) {
+      this.shieldTimer = 90; // ~1.5s shield
+      this.shieldCooldown = 360;
+      engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'dark_aura');
+    }
+    if (this.shieldTimer > 0) this.shieldTimer--;
+
+    if (dist < this.detectionRange) {
+      if (dist > this.attackRange + 10) {
+        this.vx = (dx > 0 ? 1 : -1) * this.speed;
+      } else {
+        this.vx *= 0.7;
+        if (this.attackCooldown <= 0) {
+          this.attackCooldown = 95;
+          engine.dealEnemyDamage(player, this.damage, engine);
+          engine.particles.burst(player.x + player.w / 2, player.y + player.h / 2, 'void_hit');
+        }
+      }
+    } else {
+      this.vx = this.patrolDir * (this.speed * 0.5);
+      this.patrolTimer--;
+      if (this.patrolTimer <= 0) { this.patrolTimer = 80; this.patrolDir *= -1; }
+    }
+  }
+
+  takeDamage(amount, kbX, engine, hasLurkersBane) {
+    // Shielded — reflect a portion back to player and ignore damage
+    if (this.shieldTimer > 0) {
+      this.hurtTimer = 4;
+      if (engine && engine.player) {
+        // Tiny reflect damage
+        const reflect = Math.max(1, Math.floor(amount * 0.15));
+        engine.dealEnemyDamage(engine.player, reflect, engine);
+      }
+      engine && engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'sparks');
+      return false;
+    }
+    return super.takeDamage(amount, kbX, engine, hasLurkersBane);
   }
 }

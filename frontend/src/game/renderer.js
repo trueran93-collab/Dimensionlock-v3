@@ -1,6 +1,6 @@
 import { SPRITES, getStateFrame } from './sprites.js';
 
-const SPRITE_SIZE = 130; // Visual draw size for Maytradalis
+const SPRITE_SIZE = 170; // Visual draw size for Maytradalis (larger character)
 
 export class Renderer {
   constructor() {
@@ -434,6 +434,11 @@ export class Renderer {
       ctx.restore();
     }
 
+    // ── INTERACTIVE BACKGROUND PROPS ──────────────────────────
+    // Persistent prop state, generated per floor
+    this._maybeGenerateProps(floor, T);
+    this._drawInteractiveProps(ctx, frame, T);
+
     // ── Vignette + ground mist ───────────────────────────────────────────
     const mistGrad = ctx.createLinearGradient(0, 540, 0, 720);
     mistGrad.addColorStop(0, 'rgba(60,20,120,0)');
@@ -448,6 +453,153 @@ export class Renderer {
     vGrad.addColorStop(1, 'rgba(0,0,0,0.55)');
     ctx.fillStyle = vGrad;
     ctx.fillRect(0, 0, 1280, 720);
+  }
+
+  // ─── Reactive interactive props ──────────────────────────────────────────
+  _maybeGenerateProps(floor, T) {
+    if (this._propsFloor === floor && this._propsTheme === T.neon) return;
+    this._propsFloor = floor;
+    this._propsTheme = T.neon;
+    // Floating crystals (pulse on attacks)
+    this._floatingCrystals = Array.from({ length: 7 }, (_, i) => ({
+      x: 80 + Math.random() * 1120,
+      y: 90 + Math.random() * 280,
+      size: 8 + Math.random() * 6,
+      phase: Math.random() * Math.PI * 2,
+      color: i % 2 === 0 ? T.neon : T.accent,
+      hitPulse: 0,
+    }));
+    // Hanging chains (sway with wind)
+    this._hangingChains = Array.from({ length: 5 }, () => ({
+      x: 100 + Math.random() * 1080,
+      length: 80 + Math.random() * 90,
+      phase: Math.random() * Math.PI * 2,
+    }));
+    // Lightning timers
+    this._nextLightning = 240 + Math.floor(Math.random() * 480);
+    this._lightningTimer = 0;
+    this._lightningX = 0;
+  }
+
+  // Public API for engine to ping a prop pulse on hit
+  pulseNearestCrystal(x, y) {
+    if (!this._floatingCrystals) return;
+    let nearest = null;
+    let bestD = Infinity;
+    for (const c of this._floatingCrystals) {
+      const d = Math.hypot(c.x - x, c.y - y);
+      if (d < 240 && d < bestD) { bestD = d; nearest = c; }
+    }
+    if (nearest) nearest.hitPulse = 1;
+  }
+
+  _drawInteractiveProps(ctx, frame, T) {
+    if (!this._floatingCrystals) return;
+
+    // ── Hanging chains ──────────────────────────────────────
+    ctx.save();
+    ctx.strokeStyle = '#2a1a3a';
+    ctx.lineWidth = 1.5;
+    ctx.shadowColor = T.neon; ctx.shadowBlur = 4;
+    for (const ch of this._hangingChains) {
+      const sway = Math.sin(frame * 0.015 + ch.phase) * 6;
+      // Chain links
+      ctx.beginPath();
+      for (let seg = 0; seg < ch.length; seg += 6) {
+        const cx = ch.x + sway * (seg / ch.length);
+        const cy = seg;
+        if (seg === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
+      }
+      ctx.stroke();
+      // Spike/hook at bottom
+      ctx.fillStyle = '#1a0a28';
+      ctx.beginPath();
+      const bx = ch.x + sway;
+      ctx.moveTo(bx - 3, ch.length);
+      ctx.lineTo(bx + 3, ch.length);
+      ctx.lineTo(bx, ch.length + 12);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // ── Floating crystals ────────────────────────────────────
+    ctx.save();
+    for (const c of this._floatingCrystals) {
+      c.phase += 0.04;
+      if (c.hitPulse > 0) c.hitPulse -= 0.04;
+      const yBob = Math.sin(c.phase) * 5;
+      const px = c.x;
+      const py = c.y + yBob;
+      const pulseGlow = 1 + c.hitPulse * 1.6;
+      const sz = c.size * pulseGlow;
+
+      ctx.shadowColor = c.color;
+      ctx.shadowBlur = 18 + c.hitPulse * 28;
+
+      // Diamond shape
+      const grad = ctx.createLinearGradient(px, py - sz, px, py + sz);
+      grad.addColorStop(0, '#ffffff');
+      grad.addColorStop(0.4, c.color);
+      grad.addColorStop(1, '#1a0a28');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.moveTo(px, py - sz);
+      ctx.lineTo(px + sz * 0.55, py);
+      ctx.lineTo(px, py + sz);
+      ctx.lineTo(px - sz * 0.55, py);
+      ctx.closePath();
+      ctx.fill();
+
+      // Edge highlight
+      ctx.strokeStyle = '#ffffff66';
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+
+      // Outer ring on hit pulse
+      if (c.hitPulse > 0.1) {
+        ctx.globalAlpha = c.hitPulse * 0.6;
+        ctx.strokeStyle = c.color;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(px, py, sz * 2.2 * (1 + (1 - c.hitPulse) * 0.6), 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+    }
+    ctx.restore();
+
+    // ── Background lightning strikes (occasional) ────────────
+    this._nextLightning--;
+    if (this._nextLightning <= 0 && this._lightningTimer <= 0) {
+      this._lightningTimer = 8;
+      this._lightningX = 60 + Math.random() * 1160;
+      this._nextLightning = 280 + Math.floor(Math.random() * 540);
+    }
+    if (this._lightningTimer > 0) {
+      this._lightningTimer--;
+      ctx.save();
+      // Flash overlay
+      ctx.globalAlpha = (this._lightningTimer / 8) * 0.18;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, 1280, 720);
+      // Bolt
+      ctx.globalAlpha = (this._lightningTimer / 8);
+      ctx.strokeStyle = '#fff';
+      ctx.shadowColor = T.accent;
+      ctx.shadowBlur = 22;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      let cx = this._lightningX, cy = 0;
+      ctx.moveTo(cx, cy);
+      for (let s = 0; s < 8; s++) {
+        cx += (Math.random() - 0.5) * 36;
+        cy += 60;
+        ctx.lineTo(cx, cy);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 
   _drawPlatforms(ctx, platforms, frame) {
@@ -836,11 +988,524 @@ export class Renderer {
         case 'void_sprite': this._drawVoidHusk(ctx, e, frame); break;
         case 'dimension_watcher': this._drawEyeHusk(ctx, e, frame); break;
         case 'lurker_cultist': this._drawLurkerCultist(ctx, e, frame); break;
+        case 'plague_imp': this._drawPlagueImp(ctx, e, frame); break;
+        case 'shadow_crawler': this._drawShadowCrawler(ctx, e, frame); break;
+        case 'ember_wraith': this._drawEmberWraith(ctx, e, frame); break;
+        case 'bone_howler': this._drawBoneHowler(ctx, e, frame); break;
+        case 'hex_beast': this._drawHexBeast(ctx, e, frame); break;
         case 'boss': this._drawLurkerHusk(ctx, e, frame, 'boss'); break;
         default: this._drawLurkerHusk(ctx, e, frame, 'small');
       }
       this._drawEnemyHpBar(ctx, e);
     }
+  }
+
+  // ─── Plague Imp ─ goblin-like with horns and venom drips ─────────────────
+  _drawPlagueImp(ctx, e, frame) {
+    const { x, y, w, h } = e;
+    const cx = x + w / 2, cy = y + h * 0.45;
+    const phase = frame * 0.08 + e.x * 0.01;
+    const hurtFlash = e.hurtTimer > 0 && Math.floor(frame / 3) % 2;
+    const charging = (e.chargeWindup || 0) > 0;
+    const dashing = (e.chargeTimer || 0) > 0;
+
+    ctx.save();
+    if (!e.facingRight) { ctx.translate(x + w, 0); ctx.scale(-1, 1); ctx.translate(-x, 0); }
+    if (hurtFlash) ctx.globalAlpha = 0.4;
+
+    // Body (sickly green)
+    ctx.shadowColor = charging ? '#ff6600' : '#22cc22';
+    ctx.shadowBlur = charging ? 20 : 14;
+    const bGrad = ctx.createRadialGradient(cx, cy - h * 0.08, 0, cx, cy, w * 0.45);
+    bGrad.addColorStop(0, '#5cb85c');
+    bGrad.addColorStop(0.7, '#2d6b2d');
+    bGrad.addColorStop(1, '#0c2c0c');
+    ctx.fillStyle = bGrad;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, w * 0.4, h * 0.34, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Head
+    const headY = y + h * 0.18;
+    ctx.beginPath();
+    ctx.ellipse(cx, headY, w * 0.32, h * 0.22, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Horns (curved)
+    ctx.shadowBlur = 6;
+    ctx.fillStyle = '#1a0a0a';
+    [-1, 1].forEach(side => {
+      ctx.beginPath();
+      ctx.moveTo(cx + side * w * 0.18, headY - h * 0.16);
+      ctx.quadraticCurveTo(cx + side * w * 0.32, headY - h * 0.3, cx + side * w * 0.36, headY - h * 0.42);
+      ctx.lineTo(cx + side * w * 0.26, headY - h * 0.3);
+      ctx.closePath();
+      ctx.fill();
+    });
+
+    // Yellow eyes
+    ctx.shadowColor = '#fbbf24'; ctx.shadowBlur = 12;
+    ctx.fillStyle = '#fbbf24';
+    ctx.beginPath(); ctx.arc(cx - w * 0.1, headY, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + w * 0.1, headY, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#330000';
+    ctx.beginPath(); ctx.arc(cx - w * 0.1, headY, 1.6, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + w * 0.1, headY, 1.6, 0, Math.PI * 2); ctx.fill();
+
+    // Sharp grinning teeth
+    ctx.fillStyle = '#f0e0c0';
+    ctx.shadowBlur = 3;
+    const mouthY = headY + h * 0.1;
+    for (let i = -2; i <= 2; i++) {
+      ctx.beginPath();
+      ctx.moveTo(cx + i * 4 - 2, mouthY);
+      ctx.lineTo(cx + i * 4, mouthY + 4);
+      ctx.lineTo(cx + i * 4 + 2, mouthY);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Arms — wind-up pose when charging
+    ctx.strokeStyle = '#2d6b2d';
+    ctx.lineWidth = 5; ctx.lineCap = 'round';
+    ctx.shadowBlur = 0;
+    const armSwing = charging ? Math.sin(frame * 0.5) * 8 : Math.sin(phase) * 3;
+    [-1, 1].forEach(side => {
+      ctx.beginPath();
+      ctx.moveTo(cx + side * w * 0.32, cy - h * 0.05);
+      ctx.lineTo(cx + side * (w * 0.42 + armSwing), cy + h * 0.18);
+      ctx.stroke();
+    });
+
+    // Legs
+    ctx.beginPath();
+    ctx.moveTo(cx - w * 0.12, cy + h * 0.28);
+    ctx.lineTo(cx - w * 0.18, y + h - 2);
+    ctx.moveTo(cx + w * 0.12, cy + h * 0.28);
+    ctx.lineTo(cx + w * 0.18, y + h - 2);
+    ctx.stroke();
+
+    // Venom drips
+    if (Math.sin(phase * 1.5) > 0.4) {
+      ctx.fillStyle = '#22ff22';
+      ctx.shadowColor = '#22ff22'; ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.arc(cx + Math.sin(phase) * 6, y + h * 0.92, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Charge wind-up effect
+    if (charging) {
+      ctx.shadowColor = '#ff6600'; ctx.shadowBlur = 22;
+      ctx.strokeStyle = '#ff8800';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, w * 0.55 + Math.sin(frame * 0.5) * 4, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    if (dashing) {
+      // Speed lines behind
+      ctx.strokeStyle = '#22cc22';
+      ctx.lineWidth = 2; ctx.globalAlpha = 0.5;
+      for (let i = 0; i < 4; i++) {
+        ctx.beginPath();
+        ctx.moveTo(cx - 28 - i * 12, cy - h * 0.1 + i * 6);
+        ctx.lineTo(cx - 10 - i * 12, cy - h * 0.1 + i * 6);
+        ctx.stroke();
+      }
+    }
+
+    ctx.restore();
+  }
+
+  // ─── Shadow Crawler ─ low spider-like creature ───────────────────────────
+  _drawShadowCrawler(ctx, e, frame) {
+    const { x, y, w, h } = e;
+    const cx = x + w / 2, cy = y + h * 0.55;
+    const phase = frame * 0.15 + e.x * 0.01;
+    const hurtFlash = e.hurtTimer > 0 && Math.floor(frame / 3) % 2;
+    const lunging = (e.lungeTimer || 0) > 0;
+
+    ctx.save();
+    if (!e.facingRight) { ctx.translate(x + w, 0); ctx.scale(-1, 1); ctx.translate(-x, 0); }
+    if (hurtFlash) ctx.globalAlpha = 0.4;
+
+    // Wide flat body
+    ctx.shadowColor = '#7c3aed'; ctx.shadowBlur = 14;
+    const bGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, w * 0.45);
+    bGrad.addColorStop(0, '#3a1248');
+    bGrad.addColorStop(0.7, '#1a0828');
+    bGrad.addColorStop(1, '#08020e');
+    ctx.fillStyle = bGrad;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, w * 0.45, h * 0.42, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Spike ridges along the back
+    ctx.fillStyle = '#1a0828';
+    ctx.shadowBlur = 4;
+    for (let i = -2; i <= 2; i++) {
+      const spikeX = cx + i * 8;
+      const spikeY = cy - h * 0.3;
+      ctx.beginPath();
+      ctx.moveTo(spikeX - 3, spikeY + 3);
+      ctx.lineTo(spikeX, spikeY - 5);
+      ctx.lineTo(spikeX + 3, spikeY + 3);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // 6 spider-like legs
+    ctx.strokeStyle = '#0c0418';
+    ctx.lineWidth = 2.2;
+    ctx.shadowColor = '#7c3aed'; ctx.shadowBlur = 6;
+    for (let i = 0; i < 6; i++) {
+      const side = i < 3 ? -1 : 1;
+      const idx = i % 3;
+      const legBaseX = cx + side * w * 0.28;
+      const legBaseY = cy + h * 0.05;
+      const legSwing = Math.sin(phase + i * 0.7) * (lunging ? 12 : 5);
+      const legTipX = legBaseX + side * (10 + idx * 5);
+      const legTipY = y + h - 2;
+      ctx.beginPath();
+      ctx.moveTo(legBaseX, legBaseY);
+      ctx.quadraticCurveTo(legBaseX + side * 8, legBaseY + 5 + legSwing, legTipX + legSwing * 0.4, legTipY);
+      ctx.stroke();
+    }
+
+    // Two glowing red eyes at front
+    ctx.shadowColor = '#ff3366'; ctx.shadowBlur = 12;
+    ctx.fillStyle = '#ff3366';
+    ctx.beginPath(); ctx.arc(cx + w * 0.2, cy - 2, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + w * 0.32, cy + 4, 3, 0, Math.PI * 2); ctx.fill();
+
+    // Mandibles
+    ctx.strokeStyle = '#330011'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx + w * 0.36, cy);
+    ctx.lineTo(cx + w * 0.46, cy - 4);
+    ctx.moveTo(cx + w * 0.36, cy + 6);
+    ctx.lineTo(cx + w * 0.46, cy + 10);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  // ─── Ember Wraith ─ floating fire ghoul ─────────────────────────────────
+  _drawEmberWraith(ctx, e, frame) {
+    const { x, y, w, h } = e;
+    const cx = x + w / 2;
+    const cy = y + h * 0.45 + Math.sin((e.floatOffset || frame * 0.05)) * 4;
+    const phase = frame * 0.08;
+    const hurtFlash = e.hurtTimer > 0 && Math.floor(frame / 3) % 2;
+
+    ctx.save();
+    if (hurtFlash) ctx.globalAlpha = 0.4;
+
+    // Outer flame aura
+    ctx.shadowColor = '#fbbf24'; ctx.shadowBlur = 22;
+    for (let i = 0; i < 3; i++) {
+      ctx.globalAlpha = (hurtFlash ? 0.4 : 1) * (0.15 + i * 0.06);
+      ctx.fillStyle = i === 0 ? '#fbbf24' : (i === 1 ? '#ff6b1a' : '#dc2626');
+      const r = w * 0.55 + Math.sin(phase + i) * 4;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, r, h * 0.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = hurtFlash ? 0.4 : 1;
+
+    // Body — wispy fire form
+    const bGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, w * 0.42);
+    bGrad.addColorStop(0, '#fff7c2');
+    bGrad.addColorStop(0.3, '#ff8800');
+    bGrad.addColorStop(0.7, '#a83216');
+    bGrad.addColorStop(1, '#220404');
+    ctx.fillStyle = bGrad;
+    ctx.beginPath();
+    // Flickering flame silhouette
+    ctx.moveTo(cx, y + h * 0.85);
+    ctx.quadraticCurveTo(cx - w * 0.4 + Math.sin(phase * 2) * 4, cy + h * 0.1, cx - w * 0.3, cy - h * 0.05);
+    ctx.quadraticCurveTo(cx - w * 0.45 + Math.cos(phase) * 5, cy - h * 0.2, cx - w * 0.15, y + h * 0.08);
+    ctx.quadraticCurveTo(cx, y - h * 0.04, cx + w * 0.15, y + h * 0.08);
+    ctx.quadraticCurveTo(cx + w * 0.45 + Math.sin(phase) * 5, cy - h * 0.2, cx + w * 0.3, cy - h * 0.05);
+    ctx.quadraticCurveTo(cx + w * 0.4 + Math.cos(phase * 2) * 4, cy + h * 0.1, cx, y + h * 0.85);
+    ctx.closePath();
+    ctx.fill();
+
+    // Hollow black face mask
+    ctx.fillStyle = '#000';
+    ctx.shadowBlur = 0;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy - h * 0.05, w * 0.2, h * 0.18, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Glowing white eye slits
+    ctx.fillStyle = '#fff7c2';
+    ctx.shadowColor = '#fff7c2'; ctx.shadowBlur = 12;
+    ctx.fillRect(cx - 9, cy - h * 0.08, 4, 8);
+    ctx.fillRect(cx + 5, cy - h * 0.08, 4, 8);
+
+    // Ember sparks rising
+    ctx.shadowColor = '#fbbf24'; ctx.shadowBlur = 8;
+    for (let i = 0; i < 4; i++) {
+      const sx = cx + Math.sin(phase * 1.5 + i * 1.3) * w * 0.25;
+      const sy = cy + ((frame * 0.4 + i * 22) % 60) - 60;
+      ctx.fillStyle = i % 2 ? '#fbbf24' : '#ff6b1a';
+      ctx.beginPath();
+      ctx.arc(sx, sy, 1.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  // ─── Bone Howler ─ tall skeletal summoner ───────────────────────────────
+  _drawBoneHowler(ctx, e, frame) {
+    const { x, y, w, h } = e;
+    const cx = x + w / 2;
+    const phase = frame * 0.06;
+    const hurtFlash = e.hurtTimer > 0 && Math.floor(frame / 3) % 2;
+    const howling = (e.howlTimer || 0) > 0;
+
+    ctx.save();
+    if (!e.facingRight) { ctx.translate(x + w, 0); ctx.scale(-1, 1); ctx.translate(-x, 0); }
+    if (hurtFlash) ctx.globalAlpha = 0.4;
+
+    // Tattered black robe
+    ctx.shadowColor = '#7c3aed'; ctx.shadowBlur = 16;
+    ctx.fillStyle = '#0a0414';
+    ctx.beginPath();
+    ctx.moveTo(cx - w * 0.42, y + h);
+    ctx.lineTo(cx - w * 0.32, y + h * 0.32);
+    ctx.quadraticCurveTo(cx, y + h * 0.22, cx + w * 0.32, y + h * 0.32);
+    ctx.lineTo(cx + w * 0.42, y + h);
+    // Tattered hem
+    for (let i = 0; i < 5; i++) {
+      const tx = cx - w * 0.42 + (i + 0.5) * (w * 0.84 / 5);
+      ctx.lineTo(tx + 3, y + h - 6);
+      ctx.lineTo(tx - 3, y + h - 2);
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    // Robe inner gradient
+    ctx.fillStyle = '#1a0a28';
+    ctx.beginPath();
+    ctx.moveTo(cx - w * 0.22, y + h * 0.5);
+    ctx.lineTo(cx - w * 0.18, y + h - 8);
+    ctx.lineTo(cx + w * 0.18, y + h - 8);
+    ctx.lineTo(cx + w * 0.22, y + h * 0.5);
+    ctx.closePath();
+    ctx.fill();
+
+    // Skull head
+    const headY = y + h * 0.18;
+    ctx.shadowColor = '#a855f7'; ctx.shadowBlur = 12;
+    ctx.fillStyle = '#e8e0d0';
+    ctx.beginPath();
+    ctx.ellipse(cx, headY, w * 0.28, h * 0.16, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Jaw — open wide when howling
+    const jawDrop = howling ? 8 : 1;
+    ctx.beginPath();
+    ctx.ellipse(cx, headY + h * 0.12 + jawDrop * 0.5, w * 0.2, h * 0.07 + jawDrop * 0.3, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Black eye sockets — purple glow
+    ctx.fillStyle = '#0a0214';
+    ctx.shadowColor = '#a855f7'; ctx.shadowBlur = 18;
+    ctx.beginPath(); ctx.arc(cx - w * 0.09, headY - 2, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + w * 0.09, headY - 2, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#a855f7';
+    ctx.beginPath(); ctx.arc(cx - w * 0.09, headY - 2, 1.8, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + w * 0.09, headY - 2, 1.8, 0, Math.PI * 2); ctx.fill();
+
+    // Open mouth (when howling, animated)
+    ctx.fillStyle = '#000';
+    ctx.shadowBlur = 0;
+    ctx.beginPath();
+    ctx.ellipse(cx, headY + h * 0.1, w * 0.13, h * 0.04 + jawDrop * 0.4, 0, 0, Math.PI);
+    ctx.fill();
+
+    // Skeletal arms raised when howling
+    ctx.strokeStyle = '#e0d6c4';
+    ctx.lineWidth = 3.5;
+    ctx.lineCap = 'round';
+    ctx.shadowColor = '#a855f7'; ctx.shadowBlur = 6;
+    const armAngle = howling ? -0.9 : 0.2;
+    [-1, 1].forEach(side => {
+      ctx.beginPath();
+      ctx.moveTo(cx + side * w * 0.22, y + h * 0.3);
+      const elbowX = cx + side * (w * 0.4);
+      const elbowY = y + h * 0.42 + (howling ? -h * 0.2 : 0);
+      const handX = cx + side * (w * 0.48);
+      const handY = y + h * 0.52 + Math.sin(armAngle) * h * 0.35;
+      ctx.lineTo(elbowX, elbowY);
+      ctx.lineTo(handX, handY);
+      ctx.stroke();
+      // Finger bones
+      ctx.lineWidth = 1.5;
+      for (let f = 0; f < 3; f++) {
+        ctx.beginPath();
+        ctx.moveTo(handX, handY);
+        ctx.lineTo(handX + side * (2 + f), handY - 6 + f * 3);
+        ctx.stroke();
+      }
+      ctx.lineWidth = 3.5;
+    });
+
+    // Howl resonance rings
+    if (howling) {
+      ctx.shadowColor = '#a855f7'; ctx.shadowBlur = 18;
+      ctx.strokeStyle = '#c084fc';
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 3; i++) {
+        const r = 18 + (frame % 30) * 1.4 + i * 12;
+        ctx.globalAlpha = (hurtFlash ? 0.4 : 1) * (0.5 - i * 0.15);
+        ctx.beginPath();
+        ctx.arc(cx, headY + h * 0.1, r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = hurtFlash ? 0.4 : 1;
+    }
+
+    ctx.restore();
+  }
+
+  // ─── Hex Beast ─ horned brute with shield phase ─────────────────────────
+  _drawHexBeast(ctx, e, frame) {
+    const { x, y, w, h } = e;
+    const cx = x + w / 2, cy = y + h * 0.5;
+    const phase = frame * 0.06;
+    const hurtFlash = e.hurtTimer > 0 && Math.floor(frame / 3) % 2;
+    const shielded = (e.shieldTimer || 0) > 0;
+
+    ctx.save();
+    if (!e.facingRight) { ctx.translate(x + w, 0); ctx.scale(-1, 1); ctx.translate(-x, 0); }
+    if (hurtFlash) ctx.globalAlpha = 0.4;
+
+    // Bulky body
+    ctx.shadowColor = '#dc2626'; ctx.shadowBlur = 16;
+    const bGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, w * 0.5);
+    bGrad.addColorStop(0, '#7a1f1f');
+    bGrad.addColorStop(0.7, '#3a0808');
+    bGrad.addColorStop(1, '#0a0202');
+    ctx.fillStyle = bGrad;
+    ctx.beginPath();
+    // Hulking shoulder shape
+    ctx.moveTo(cx - w * 0.48, y + h);
+    ctx.lineTo(cx - w * 0.46, cy);
+    ctx.quadraticCurveTo(cx - w * 0.42, y + h * 0.2, cx - w * 0.22, y + h * 0.18);
+    ctx.lineTo(cx + w * 0.22, y + h * 0.18);
+    ctx.quadraticCurveTo(cx + w * 0.42, y + h * 0.2, cx + w * 0.46, cy);
+    ctx.lineTo(cx + w * 0.48, y + h);
+    ctx.closePath();
+    ctx.fill();
+
+    // Bone/armor plating across chest
+    ctx.fillStyle = '#3a3a3a';
+    ctx.shadowBlur = 4;
+    ctx.fillRect(cx - w * 0.3, cy - 6, w * 0.6, 12);
+    // Rivets
+    ctx.fillStyle = '#fbbf24';
+    for (let i = -2; i <= 2; i++) {
+      ctx.beginPath();
+      ctx.arc(cx + i * (w * 0.12), cy, 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Head
+    const headY = y + h * 0.16;
+    ctx.fillStyle = '#5c1818';
+    ctx.shadowColor = '#dc2626'; ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.ellipse(cx, headY, w * 0.22, h * 0.14, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Massive horns
+    ctx.fillStyle = '#1a0a0a';
+    ctx.shadowBlur = 5;
+    [-1, 1].forEach(side => {
+      ctx.beginPath();
+      ctx.moveTo(cx + side * w * 0.12, headY - h * 0.1);
+      ctx.quadraticCurveTo(cx + side * w * 0.34, headY - h * 0.32, cx + side * w * 0.45, headY - h * 0.46);
+      ctx.lineTo(cx + side * w * 0.3, headY - h * 0.22);
+      ctx.closePath();
+      ctx.fill();
+    });
+
+    // Glowing red eyes
+    ctx.fillStyle = '#ff3366'; ctx.shadowColor = '#ff3366'; ctx.shadowBlur = 14;
+    ctx.beginPath(); ctx.arc(cx - 5, headY, 3.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + 5, headY, 3.5, 0, Math.PI * 2); ctx.fill();
+
+    // Mouth with fangs
+    ctx.fillStyle = '#000';
+    ctx.shadowBlur = 0;
+    ctx.beginPath();
+    ctx.ellipse(cx, headY + h * 0.08, w * 0.12, h * 0.04, 0, 0, Math.PI);
+    ctx.fill();
+    ctx.fillStyle = '#f0e0c0';
+    for (let i = -1; i <= 1; i += 2) {
+      ctx.beginPath();
+      ctx.moveTo(cx + i * 5 - 2, headY + h * 0.07);
+      ctx.lineTo(cx + i * 5, headY + h * 0.12);
+      ctx.lineTo(cx + i * 5 + 2, headY + h * 0.07);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Heavy arms (bulky)
+    ctx.fillStyle = '#5c1818';
+    ctx.shadowColor = '#dc2626'; ctx.shadowBlur = 8;
+    [-1, 1].forEach(side => {
+      const armX = cx + side * w * 0.4;
+      ctx.beginPath();
+      ctx.ellipse(armX, cy + h * 0.05, 9, h * 0.18, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // Spiked fists
+      ctx.fillStyle = '#1a0a0a';
+      ctx.beginPath();
+      ctx.arc(armX, cy + h * 0.28, 7, 0, Math.PI * 2);
+      ctx.fill();
+      // Spikes
+      ctx.beginPath();
+      ctx.moveTo(armX - 4, cy + h * 0.28 - 4);
+      ctx.lineTo(armX, cy + h * 0.28 - 10);
+      ctx.lineTo(armX + 4, cy + h * 0.28 - 4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#5c1818';
+    });
+
+    // Legs
+    ctx.fillStyle = '#3a0808';
+    ctx.fillRect(cx - w * 0.18, cy + h * 0.25, w * 0.12, h * 0.22);
+    ctx.fillRect(cx + w * 0.06, cy + h * 0.25, w * 0.12, h * 0.22);
+
+    // Shield phase visual
+    if (shielded) {
+      ctx.shadowColor = '#3b82f6'; ctx.shadowBlur = 24;
+      ctx.strokeStyle = '#60a5fa';
+      ctx.lineWidth = 3;
+      ctx.globalAlpha = (hurtFlash ? 0.4 : 1) * (0.5 + Math.sin(frame * 0.4) * 0.3);
+      ctx.beginPath();
+      ctx.arc(cx, cy, w * 0.62, 0, Math.PI * 2);
+      ctx.stroke();
+      // Hex pattern
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = '#93c5fd';
+      for (let i = 0; i < 6; i++) {
+        const a = (Math.PI / 3) * i + phase * 0.5;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(a) * w * 0.62, cy + Math.sin(a) * w * 0.62);
+        ctx.lineTo(cx + Math.cos(a + Math.PI / 3) * w * 0.62, cy + Math.sin(a + Math.PI / 3) * w * 0.62);
+        ctx.stroke();
+      }
+    }
+
+    ctx.restore();
   }
 
   _drawLurkerHusk(ctx, e, frame, variant = 'small') {

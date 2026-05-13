@@ -25,7 +25,33 @@ const useIsTouch = () => {
 export default function GameCanvas({ onGameOver, onReturnToMenu }) {
   const canvasRef = useRef(null);
   const engineRef = useRef(null);
+  const containerRef = useRef(null);
   const isTouch = useIsTouch();
+
+  // HUD scaling factor (1 = canvas at native 1280px width; smaller on phones)
+  const [hudScale, setHudScale] = useState(1);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const updateScale = () => {
+      const w = el.clientWidth || 1280;
+      // Clamp scale between 0.45 (small phones) and 1
+      setHudScale(Math.max(0.45, Math.min(1, w / 1280)));
+    };
+    updateScale();
+    let ro;
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(updateScale);
+      ro.observe(el);
+    } else {
+      window.addEventListener('resize', updateScale);
+    }
+    return () => {
+      if (ro) ro.disconnect();
+      else window.removeEventListener('resize', updateScale);
+    };
+  }, []);
 
   const [stats, setStats] = useState({
     hp: 100, maxHp: 100, sp: 100, maxSp: 100,
@@ -119,6 +145,7 @@ export default function GameCanvas({ onGameOver, onReturnToMenu }) {
 
   return (
     <div
+      ref={containerRef}
       data-testid="game-canvas-container"
       style={{
         position: 'relative',
@@ -146,7 +173,10 @@ export default function GameCanvas({ onGameOver, onReturnToMenu }) {
           }}
         >
           {/* Top-left: HP / SP / Ult bars */}
-          <div style={{ position: 'absolute', top: 12, left: 12 }}>
+          <div style={{
+            position: 'absolute', top: 12, left: 12,
+            transform: `scale(${hudScale})`, transformOrigin: 'top left',
+          }}>
             {/* HP Bar */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
               <span style={{ color: '#ff3366', fontSize: 11, minWidth: 22, textShadow: '0 0 8px #ff3366' }}>HP</span>
@@ -216,7 +246,10 @@ export default function GameCanvas({ onGameOver, onReturnToMenu }) {
           </div>
 
           {/* Top-right: Floor + Score */}
-          <div style={{ position: 'absolute', top: 12, right: 12, textAlign: 'right' }}>
+          <div style={{
+            position: 'absolute', top: 12, right: 12, textAlign: 'right',
+            transform: `scale(${hudScale})`, transformOrigin: 'top right',
+          }}>
             <div data-testid="floor-display" style={{ color: '#00ffcc', fontSize: 13, textShadow: '0 0 10px #00ffcc', marginBottom: 3 }}>
               FLOOR {stats.floor}
             </div>
@@ -234,7 +267,7 @@ export default function GameCanvas({ onGameOver, onReturnToMenu }) {
               data-testid="combo-display"
               style={{
                 position: 'absolute', top: '50%', left: '50%',
-                transform: 'translate(-50%, -60%)',
+                transform: `translate(-50%, -60%) scale(${hudScale})`,
                 color: '#fbbf24', fontSize: 28,
                 textShadow: '0 0 20px #fbbf24, 0 0 40px #f59e0b',
                 fontWeight: 'bold', letterSpacing: '0.1em',
@@ -252,7 +285,7 @@ export default function GameCanvas({ onGameOver, onReturnToMenu }) {
               data-testid="ultimate-active"
               style={{
                 position: 'absolute', top: '20%', left: '50%',
-                transform: 'translateX(-50%)',
+                transform: `translateX(-50%) scale(${hudScale})`,
                 color: '#fbbf24', fontSize: 28,
                 textShadow: '0 0 30px #fbbf24, 0 0 60px #ff6600',
                 fontWeight: 'bold', letterSpacing: '0.2em',
@@ -268,7 +301,8 @@ export default function GameCanvas({ onGameOver, onReturnToMenu }) {
           {!isTouch && (
             <div style={{
               position: 'absolute', bottom: 8, left: 16,
-              color: '#ffffff44', fontSize: 10, lineHeight: '1.6'
+              color: '#ffffff44', fontSize: 10, lineHeight: '1.6',
+              transform: `scale(${hudScale})`, transformOrigin: 'bottom left',
             }}>
               <span>Move: A/D</span>
               <span style={{ marginLeft: 10 }}>Jump: W/Space (2x)</span>
@@ -304,13 +338,15 @@ export default function GameCanvas({ onGameOver, onReturnToMenu }) {
         visible={mobileControlsOn && !showUpgrade && !showBossWarning}
       />
 
-      {/* Pause Button (top-right corner, below floor display) */}
+      {/* Pause Button (top-center) */}
       {!showUpgrade && !showBossWarning && !paused && (
         <button
           data-testid="pause-button"
           onClick={handlePauseClick}
           style={{
-            position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)',
+            position: 'absolute', top: 12, left: '50%',
+            transform: `translateX(-50%) scale(${hudScale})`,
+            transformOrigin: 'top center',
             background: 'rgba(8,4,16,0.7)',
             border: '1px solid #7c3aed55',
             color: '#a855f7',

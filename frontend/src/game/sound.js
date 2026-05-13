@@ -882,6 +882,239 @@ class SoundEngine {
     src.start(t);
   }
 
+  // ── New action sounds ────────────────────────────────────
+
+  // Heavy hit confirm — extra "thwack" for heavy/ult landing on an enemy
+  playHitHeavy() {
+    if (!this.ctx || !this.enabled) return;
+    const t = this._time();
+
+    // Strong low thud
+    const osc  = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(160, t);
+    osc.frequency.exponentialRampToValueAtTime(35, t + 0.16);
+    gain.gain.setValueAtTime(0.85, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+    osc.connect(gain); gain.connect(this._masterGain);
+    osc.start(t); osc.stop(t + 0.22);
+    this._reverb$(gain, 0.18);
+
+    // Crunch noise
+    const buf  = this._noiseBuf(0.13, 2.8);
+    const src  = this.ctx.createBufferSource();
+    const filt = this.ctx.createBiquadFilter();
+    const nGain = this.ctx.createGain();
+    src.buffer = buf;
+    filt.type = 'bandpass'; filt.frequency.value = 1100; filt.Q.value = 1.4;
+    nGain.gain.setValueAtTime(0.55, t);
+    nGain.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+    src.connect(filt); filt.connect(nGain); nGain.connect(this._masterGain);
+    src.start(t);
+
+    // Mid bone-crack snap
+    const snapOsc  = this.ctx.createOscillator();
+    const snapGain = this.ctx.createGain();
+    snapOsc.type = 'sawtooth';
+    snapOsc.frequency.setValueAtTime(520, t + 0.01);
+    snapOsc.frequency.exponentialRampToValueAtTime(110, t + 0.09);
+    snapGain.gain.setValueAtTime(0.22, t + 0.01);
+    snapGain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+    snapOsc.connect(snapGain); snapGain.connect(this._masterGain);
+    snapOsc.start(t + 0.01); snapOsc.stop(t + 0.12);
+  }
+
+  // Landing — soft thud + boot scuff
+  playLand() {
+    if (!this.ctx || !this.enabled) return;
+    const t = this._time();
+
+    // Soft thud
+    const osc  = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(140, t);
+    osc.frequency.exponentialRampToValueAtTime(48, t + 0.1);
+    gain.gain.setValueAtTime(0.32, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.13);
+    osc.connect(gain); gain.connect(this._masterGain);
+    osc.start(t); osc.stop(t + 0.15);
+
+    // Dust scuff
+    const buf = this._noiseBuf(0.12, 2.0);
+    const src = this.ctx.createBufferSource();
+    const filt = this.ctx.createBiquadFilter();
+    const nGain = this.ctx.createGain();
+    src.buffer = buf;
+    filt.type = 'highpass'; filt.frequency.value = 2200;
+    nGain.gain.setValueAtTime(0.18, t);
+    nGain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+    src.connect(filt); filt.connect(nGain); nGain.connect(this._masterGain);
+    src.start(t);
+  }
+
+  // Hit blocked / parried — metallic clink
+  playBlocked() {
+    if (!this.ctx || !this.enabled) return;
+    const t = this._time();
+
+    [1800, 2700, 3600].forEach((freq, i) => {
+      const osc  = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.18 - i * 0.04, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+      osc.connect(gain); gain.connect(this._masterGain);
+      osc.start(t); osc.stop(t + 0.2);
+      this._reverb$(gain, 0.16);
+    });
+
+    // Metallic noise burst
+    const buf  = this._noiseBuf(0.1, 4);
+    const src  = this.ctx.createBufferSource();
+    const filt = this.ctx.createBiquadFilter();
+    const nGain = this.ctx.createGain();
+    src.buffer = buf;
+    filt.type = 'bandpass'; filt.frequency.value = 4200; filt.Q.value = 6;
+    nGain.gain.setValueAtTime(0.38, t);
+    nGain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+    src.connect(filt); filt.connect(nGain); nGain.connect(this._masterGain);
+    src.start(t);
+  }
+
+  // Enemy death — soft squelch with descending pitch
+  playEnemyDeath(type = 'shadow_demon') {
+    if (!this.ctx || !this.enabled) return;
+    const t = this._time();
+
+    // Wail (pitch drop)
+    const baseFreq = type === 'boss' ? 220 : (type === 'void_sprite' ? 540 : 320);
+    const osc  = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = type === 'ember_wraith' ? 'triangle' : 'sawtooth';
+    osc.frequency.setValueAtTime(baseFreq, t);
+    osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.22, t + 0.55);
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(0.34, t + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+    osc.connect(gain); gain.connect(this._masterGain);
+    osc.start(t); osc.stop(t + 0.65);
+    this._reverb$(gain, 0.28);
+
+    // Body splat (low noise burst)
+    const buf  = this._noiseBuf(0.22, 1.6);
+    const src  = this.ctx.createBufferSource();
+    const filt = this.ctx.createBiquadFilter();
+    const nGain = this.ctx.createGain();
+    src.buffer = buf;
+    filt.type = 'lowpass';
+    filt.frequency.setValueAtTime(800, t);
+    filt.frequency.exponentialRampToValueAtTime(180, t + 0.2);
+    nGain.gain.setValueAtTime(0.42, t);
+    nGain.gain.exponentialRampToValueAtTime(0.001, t + 0.24);
+    src.connect(filt); filt.connect(nGain); nGain.connect(this._masterGain);
+    src.start(t);
+  }
+
+  // Projectile fired (enemy) — fiery shoosh
+  playProjectileFire() {
+    if (!this.ctx || !this.enabled) return;
+    const t = this._time();
+
+    const buf  = this._noiseBuf(0.18, 2.4);
+    const src  = this.ctx.createBufferSource();
+    const filt = this.ctx.createBiquadFilter();
+    const gain = this.ctx.createGain();
+    src.buffer = buf;
+    filt.type = 'bandpass'; filt.Q.value = 1.2;
+    filt.frequency.setValueAtTime(1400, t);
+    filt.frequency.exponentialRampToValueAtTime(420, t + 0.15);
+    gain.gain.setValueAtTime(0.3, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+    src.connect(filt); filt.connect(gain); gain.connect(this._masterGain);
+    src.start(t);
+
+    // Fire crackle
+    const osc  = this.ctx.createOscillator();
+    const oGain = this.ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(380, t);
+    osc.frequency.exponentialRampToValueAtTime(120, t + 0.16);
+    oGain.gain.setValueAtTime(0.14, t);
+    oGain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+    osc.connect(oGain); oGain.connect(this._masterGain);
+    osc.start(t); osc.stop(t + 0.2);
+  }
+
+  // Enemy charging up (plague imp wind-up etc.)
+  playEnemyCharge() {
+    if (!this.ctx || !this.enabled) return;
+    const t = this._time();
+
+    const osc  = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(75, t);
+    osc.frequency.exponentialRampToValueAtTime(260, t + 0.4);
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(0.18, t + 0.1);
+    gain.gain.setValueAtTime(0.18, t + 0.35);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+    osc.connect(gain); gain.connect(this._masterGain);
+    osc.start(t); osc.stop(t + 0.52);
+  }
+
+  // Summon — eerie chord rise
+  playSummon() {
+    if (!this.ctx || !this.enabled) return;
+    const t = this._time();
+
+    [110, 138, 165, 220].forEach((freq, i) => {
+      const osc  = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq * 0.6, t);
+      osc.frequency.exponentialRampToValueAtTime(freq, t + 0.4);
+      gain.gain.setValueAtTime(0, t + i * 0.04);
+      gain.gain.linearRampToValueAtTime(0.16, t + i * 0.04 + 0.15);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
+      osc.connect(gain); gain.connect(this._masterGain);
+      osc.start(t + i * 0.04); osc.stop(t + 0.75);
+      this._reverb$(gain, 0.35);
+    });
+
+    // Whoosh
+    const buf  = this._noiseBuf(0.5, 1.2);
+    const src  = this.ctx.createBufferSource();
+    const filt = this.ctx.createBiquadFilter();
+    const nGain = this.ctx.createGain();
+    src.buffer = buf;
+    filt.type = 'bandpass'; filt.frequency.value = 700; filt.Q.value = 1.2;
+    nGain.gain.setValueAtTime(0.2, t);
+    nGain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+    src.connect(filt); filt.connect(nGain); nGain.connect(this._masterGain);
+    src.start(t);
+    this._reverb$(nGain, 0.25);
+  }
+
+  // Menu / UI click
+  playUiClick() {
+    if (!this.ctx || !this.enabled) return;
+    const t = this._time();
+
+    const osc  = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(780, t);
+    osc.frequency.exponentialRampToValueAtTime(520, t + 0.05);
+    gain.gain.setValueAtTime(0.12, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+    osc.connect(gain); gain.connect(this._masterGain);
+    osc.start(t); osc.stop(t + 0.1);
+  }
+
   // Ultimate — massive power explosion
   playUltimate() {
     if (!this.ctx || !this.enabled) return;

@@ -1,15 +1,14 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import IntroCinematic from './components/IntroCinematic.jsx';
 import MainMenu from './components/MainMenu.jsx';
 import GameCanvas from './components/GameCanvas.jsx';
 import GameOver from './components/GameOver.jsx';
 import { soundEngine } from './game/sound.js';
 import './App.css';
 
-// Screens: 'intro' | 'menu' | 'playing' | 'game_over'
+// Screens: 'menu' | 'playing' | 'game_over'
 
 function App() {
-  const [screen, setScreen] = useState('intro');
+  const [screen, setScreen] = useState('menu');
   const [gameResult, setGameResult] = useState(null);
   const [gameKey, setGameKey] = useState(0);
 
@@ -26,10 +25,6 @@ function App() {
       window.removeEventListener('keydown', initAudio);
     };
   }, [initAudio]);
-
-  const handleIntroComplete = useCallback(() => {
-    setScreen('menu');
-  }, []);
 
   const handlePlay = useCallback(() => {
     soundEngine.init();
@@ -53,10 +48,6 @@ function App() {
 
   return (
     <div style={{ margin: 0, padding: 0, background: '#04020e', minHeight: '100vh', overflow: 'hidden' }}>
-      {screen === 'intro' && (
-        <IntroCinematic onComplete={handleIntroComplete} />
-      )}
-
       {screen === 'menu' && (
         <MainMenu onPlay={handlePlay} />
       )}

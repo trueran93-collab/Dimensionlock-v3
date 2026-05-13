@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 const MAYTRADALIS_ART = 'https://customer-assets.emergentagent.com/job_gothic-action-beats/artifacts/eqvwwi5o_611d4b76933a75a5a6923ea9856fcd49.webp';
+const TITLE_ART = 'https://customer-assets.emergentagent.com/job_mobile-ui-demon-fix/artifacts/i0t28uzi_DLDS-White-1.png';
 
 const LORE_LINES = [
   '"Between the folds of reality, where death has no dominion, she hunts."',
@@ -23,6 +24,17 @@ const CONTROLS = [
   { action: 'Pause',         key: 'Esc / P'          },
 ];
 
+// ── Hook: viewport size tracking ──────────────────────────────
+function useViewport() {
+  const [vw, setVw] = useState(typeof window !== 'undefined' ? window.innerWidth : 1280);
+  useEffect(() => {
+    const onResize = () => setVw(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  return { vw, isMobile: vw < 768, isCompact: vw < 1024 };
+}
+
 // ── Hex grid + particle background canvas ─────────────────
 function BgCanvas() {
   const ref = useRef(null);
@@ -41,7 +53,6 @@ function BgCanvas() {
     resize();
     window.addEventListener('resize', resize);
 
-    // Spawn ambient particles
     for (let i = 0; i < 60; i++) {
       particles.push({
         x: Math.random() * canvas.width,
@@ -78,7 +89,6 @@ function BgCanvas() {
       const { width: W, height: H } = canvas;
       ctx.clearRect(0, 0, W, H);
 
-      // ── Base gradient ──────────────────────────────────
       const bg = ctx.createLinearGradient(0, 0, 0, H);
       bg.addColorStop(0, '#030108');
       bg.addColorStop(0.5, '#060212');
@@ -86,10 +96,9 @@ function BgCanvas() {
       ctx.fillStyle = bg;
       ctx.fillRect(0, 0, W, H);
 
-      // ── Hex grid ──────────────────────────────────────
-      const HR = 52;
-      const hW  = HR * 2 * 0.866; // col step
-      const hH  = HR * 1.5;       // row step
+      const HR = Math.max(36, Math.min(W, H) * 0.06);
+      const hW  = HR * 2 * 0.866;
+      const hH  = HR * 1.5;
       const cx  = W * 0.5;
       const cy  = H * 0.45;
 
@@ -101,7 +110,6 @@ function BgCanvas() {
           const wave = Math.sin(dist * 0.01 - frame * 0.035) * 0.5 + 0.5;
           const a = 0.025 + wave * 0.055;
 
-          // Occasionally light up a hex
           const seed = (row * 31 + col * 17) % 100;
           const isPulsing = seed < 4 && Math.sin(frame * 0.04 + seed * 0.7) > 0.7;
           hex(hx, hy, HR - 3, isPulsing ? a * 3 : a,
@@ -109,7 +117,6 @@ function BgCanvas() {
         }
       }
 
-      // ── Diagonal energy lines ──────────────────────────
       ctx.save();
       for (let i = 0; i < 4; i++) {
         const progress = ((frame * 0.006 + i * 0.25) % 1);
@@ -124,7 +131,6 @@ function BgCanvas() {
       }
       ctx.restore();
 
-      // ── Particles ─────────────────────────────────────
       ctx.save();
       for (const p of particles) {
         p.x += p.vx; p.y += p.vy;
@@ -143,7 +149,6 @@ function BgCanvas() {
       }
       ctx.restore();
 
-      // ── Scanline overlay ──────────────────────────────
       ctx.save();
       ctx.globalAlpha = 0.025;
       for (let y = 0; y < H; y += 3) {
@@ -152,7 +157,6 @@ function BgCanvas() {
       }
       ctx.restore();
 
-      // ── Vignette ──────────────────────────────────────
       const vig = ctx.createRadialGradient(W/2, H/2, H*0.25, W/2, H/2, H*0.85);
       vig.addColorStop(0, 'rgba(0,0,0,0)');
       vig.addColorStop(1, 'rgba(0,0,0,0.72)');
@@ -171,17 +175,13 @@ function BgCanvas() {
   return <canvas ref={ref} style={{ position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none' }} />;
 }
 
-// ── Corner bracket decoration ──────────────────────────────
-function CornerBrackets() {
-  const style = (pos) => ({
-    position: 'absolute', ...pos,
-    width: 36, height: 36,
-    pointerEvents: 'none', zIndex: 2,
-  });
-  const lineH = { position: 'absolute', height: 1, background: '#7c3aed', opacity: 0.7 };
-  const lineV = { position: 'absolute', width: 1, background: '#7c3aed', opacity: 0.7 };
+// ── Corner brackets ──────────────────────────────────────
+function CornerBrackets({ compact }) {
+  const sz = compact ? 22 : 36;
+  const inset = compact ? 8 : 16;
+  const style = (pos) => ({ position: 'absolute', ...pos, width: sz, height: sz, pointerEvents: 'none', zIndex: 2 });
   const corner = (flip) => (
-    <svg width="36" height="36" viewBox="0 0 36 36" fill="none"
+    <svg width={sz} height={sz} viewBox="0 0 36 36" fill="none"
       style={{ transform: `scale(${flip.x ? -1 : 1}, ${flip.y ? -1 : 1})` }}>
       <polyline points="36,2 2,2 2,36" stroke="#7c3aed" strokeWidth="1.5" opacity="0.8"/>
       <polyline points="36,2 2,2 2,36" stroke="#a855f7" strokeWidth="0.5" opacity="0.5"/>
@@ -189,77 +189,21 @@ function CornerBrackets() {
   );
   return (
     <>
-      <div style={style({ top: 16, left: 16 })}>{corner({ x: false, y: false })}</div>
-      <div style={style({ top: 16, right: 16 })}>{corner({ x: true, y: false })}</div>
-      <div style={style({ bottom: 16, left: 16 })}>{corner({ x: false, y: true })}</div>
-      <div style={style({ bottom: 16, right: 16 })}>{corner({ x: true, y: true })}</div>
-      {/* Top & bottom thin lines */}
-      <div style={{ ...lineH, top: 18, left: 56, right: 56, zIndex: 2, opacity: 0.3 }} />
-      <div style={{ ...lineH, bottom: 18, left: 56, right: 56, zIndex: 2, opacity: 0.3 }} />
+      <div style={style({ top: inset, left: inset })}>{corner({ x: false, y: false })}</div>
+      <div style={style({ top: inset, right: inset })}>{corner({ x: true, y: false })}</div>
+      <div style={style({ bottom: inset, left: inset })}>{corner({ x: false, y: true })}</div>
+      <div style={style({ bottom: inset, right: inset })}>{corner({ x: true, y: true })}</div>
     </>
   );
 }
 
-// ── Glitch title ───────────────────────────────────────────
-function GlitchTitle() {
-  return (
-    <div style={{ position: 'relative', lineHeight: 1, marginBottom: 4 }}>
-      {/* Base */}
-      <h1 style={{
-        fontFamily: "'Cinzel Decorative', 'Cinzel', 'Times New Roman', serif",
-        fontSize: 'clamp(2.8rem, 6.5vw, 5.2rem)',
-        fontWeight: 900,
-        letterSpacing: '0.12em',
-        color: '#f0eaff',
-        textShadow: '0 0 40px rgba(168,85,247,0.85), 0 0 80px rgba(168,85,247,0.35), 0 2px 0 #4c1d95',
-        margin: 0,
-        animation: 'titleGlitch 8s steps(1) infinite',
-        userSelect: 'none',
-      }}>
-        DIMENSIONLOCK
-      </h1>
-      {/* Glitch layer 1 */}
-      <h1 aria-hidden="true" style={{
-        position: 'absolute', top: 0, left: 0,
-        fontFamily: "'Cinzel Decorative', 'Cinzel', serif",
-        fontSize: 'clamp(2.8rem, 6.5vw, 5.2rem)',
-        fontWeight: 900,
-        letterSpacing: '0.12em',
-        color: '#ff3366',
-        margin: 0,
-        opacity: 0,
-        animation: 'glitchLayer1 8s steps(1) infinite',
-        pointerEvents: 'none',
-        userSelect: 'none',
-      }}>
-        DIMENSIONLOCK
-      </h1>
-      {/* Glitch layer 2 */}
-      <h1 aria-hidden="true" style={{
-        position: 'absolute', top: 0, left: 0,
-        fontFamily: "'Cinzel Decorative', 'Cinzel', serif",
-        fontSize: 'clamp(2.8rem, 6.5vw, 5.2rem)',
-        fontWeight: 900,
-        letterSpacing: '0.12em',
-        color: '#00ffcc',
-        margin: 0,
-        opacity: 0,
-        animation: 'glitchLayer2 8s steps(1) infinite',
-        pointerEvents: 'none',
-        userSelect: 'none',
-      }}>
-        DIMENSIONLOCK
-      </h1>
-    </div>
-  );
-}
-
 // ── Styled menu button ─────────────────────────────────────
-function MenuButton({ children, onClick, variant = 'primary', large = false }) {
+function MenuButton({ children, onClick, variant = 'primary', large = false, testId, compact = false }) {
   const [hover, setHover] = useState(false);
   const isPrimary = variant === 'primary';
   return (
     <button
+      data-testid={testId}
       onClick={onClick}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
@@ -274,21 +218,24 @@ function MenuButton({ children, onClick, variant = 'primary', large = false }) {
         color: hover
           ? (isPrimary ? '#e8d5ff' : '#00ffcc')
           : '#b8a8d8',
-        padding: large ? '16px 48px' : '12px 32px',
-        fontSize: large ? 16 : 13,
+        padding: large
+          ? (compact ? '13px 28px' : '16px 48px')
+          : (compact ? '10px 18px' : '12px 32px'),
+        fontSize: large ? (compact ? 13 : 16) : (compact ? 11 : 13),
         fontWeight: 700,
-        letterSpacing: '0.35em',
+        letterSpacing: compact ? '0.22em' : '0.35em',
         textTransform: 'uppercase',
         fontFamily: "'Outfit', 'JetBrains Mono', sans-serif",
         cursor: 'pointer',
         transition: 'all 0.2s ease',
-        minWidth: large ? 280 : 220,
+        width: '100%',
+        maxWidth: large ? (compact ? 320 : 340) : (compact ? 260 : 280),
         boxShadow: hover
           ? `0 0 24px ${isPrimary ? 'rgba(168,85,247,0.35)' : 'rgba(0,255,204,0.25)'}, inset 0 0 14px ${isPrimary ? 'rgba(168,85,247,0.08)' : 'rgba(0,255,204,0.06)'}`
           : 'none',
-        // Angular cut on one corner
         clipPath: 'polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px))',
         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+        WebkitTapHighlightColor: 'transparent',
       }}
     >
       {isPrimary && (
@@ -305,23 +252,82 @@ function MenuButton({ children, onClick, variant = 'primary', large = false }) {
   );
 }
 
+// ── Title artwork ───────────────────────────────────────────
+function TitleArt({ compact }) {
+  return (
+    <div data-testid="title-art" style={{
+      position: 'relative',
+      width: '100%',
+      maxWidth: compact ? 360 : 580,
+      margin: '0 0 14px',
+      lineHeight: 0,
+      userSelect: 'none',
+      animation: 'titleFloat 6s ease-in-out infinite',
+    }}>
+      <img
+        src={TITLE_ART}
+        alt="Dimensionlock: Deathly Stories"
+        draggable={false}
+        style={{
+          width: '100%',
+          height: 'auto',
+          objectFit: 'contain',
+          filter: 'drop-shadow(0 0 22px rgba(168,85,247,0.55)) drop-shadow(0 0 44px rgba(168,85,247,0.22))',
+          pointerEvents: 'none',
+        }}
+      />
+      {/* Glitch overlay */}
+      <img
+        src={TITLE_ART}
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+        style={{
+          position: 'absolute', top: 0, left: 0,
+          width: '100%', height: 'auto', objectFit: 'contain',
+          mixBlendMode: 'screen',
+          opacity: 0,
+          animation: 'titleGlitchRed 8s steps(1) infinite',
+          filter: 'hue-rotate(-50deg) saturate(2.5) brightness(1.1)',
+          pointerEvents: 'none',
+        }}
+      />
+      <img
+        src={TITLE_ART}
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+        style={{
+          position: 'absolute', top: 0, left: 0,
+          width: '100%', height: 'auto', objectFit: 'contain',
+          mixBlendMode: 'screen',
+          opacity: 0,
+          animation: 'titleGlitchCyan 8s steps(1) infinite',
+          filter: 'hue-rotate(140deg) saturate(2) brightness(1.1)',
+          pointerEvents: 'none',
+        }}
+      />
+    </div>
+  );
+}
+
 // ── Main Menu ──────────────────────────────────────────────
 export default function MainMenu({ onPlay }) {
-  const [tab, setTab]         = useState('main'); // 'main' | 'controls' | 'lore'
+  const [tab, setTab]         = useState('main');
   const [loreIdx, setLoreIdx] = useState(0);
-  const [systemStatus]        = useState(() => ['RIFT UNSTABLE', 'THREAT: CRITICAL', 'SOULS DETECTED'][0]);
+  const { isMobile, isCompact } = useViewport();
 
-  // Cycle lore lines
   useEffect(() => {
     const id = setInterval(() => setLoreIdx(i => (i + 1) % LORE_LINES.length), 5000);
     return () => clearInterval(id);
   }, []);
 
   return (
-    <div style={{
+    <div data-testid="main-menu" style={{
       position: 'fixed', inset: 0,
       fontFamily: "'Outfit', sans-serif",
-      overflow: 'hidden',
+      overflow: 'auto',
+      WebkitOverflowScrolling: 'touch',
       color: '#e8e0f0',
       userSelect: 'none',
     }}>
@@ -329,169 +335,197 @@ export default function MainMenu({ onPlay }) {
       <BgCanvas />
 
       {/* Corner decorations */}
-      <CornerBrackets />
+      <CornerBrackets compact={isCompact} />
 
       {/* ── Top system bar ──────────────────────────────── */}
       <div style={{
-        position: 'absolute', top: 0, left: 0, right: 0,
-        height: 36,
+        position: 'fixed', top: 0, left: 0, right: 0,
+        height: isCompact ? 28 : 36,
         background: 'rgba(10,5,25,0.92)',
         borderBottom: '1px solid rgba(124,58,237,0.3)',
         display: 'flex', alignItems: 'center',
-        padding: '0 60px',
-        gap: 32, zIndex: 10,
+        padding: isCompact ? '0 16px' : '0 60px',
+        gap: isCompact ? 12 : 32, zIndex: 10,
       }}>
-        <span style={{ color: '#7c3aed', fontSize: 10, letterSpacing: '0.3em', fontFamily: "'JetBrains Mono', monospace" }}>
-          ◆ SYS:DIMENSIONLOCK-7.3
+        <span style={{ color: '#7c3aed', fontSize: isCompact ? 9 : 10, letterSpacing: isCompact ? '0.18em' : '0.3em', fontFamily: "'JetBrains Mono', monospace", whiteSpace: 'nowrap' }}>
+          ◆ SYS:DL-7.3
         </span>
-        <span style={{ color: '#444', fontSize: 10, letterSpacing: '0.2em', fontFamily: "'JetBrains Mono', monospace" }}>|</span>
-        <span style={{ color: '#ff4466', fontSize: 10, letterSpacing: '0.25em', fontFamily: "'JetBrains Mono', monospace",
-          animation: 'statusBlink 1.8s ease-in-out infinite' }}>
-          ● {systemStatus}
+        {!isCompact && (
+          <span style={{ color: '#444', fontSize: 10, letterSpacing: '0.2em', fontFamily: "'JetBrains Mono', monospace" }}>|</span>
+        )}
+        <span style={{
+          color: '#ff4466',
+          fontSize: isCompact ? 9 : 10,
+          letterSpacing: isCompact ? '0.18em' : '0.25em',
+          fontFamily: "'JetBrains Mono', monospace",
+          animation: 'statusBlink 1.8s ease-in-out infinite',
+          whiteSpace: 'nowrap',
+        }}>
+          ● RIFT UNSTABLE
         </span>
         <div style={{ flex: 1 }} />
-        <span style={{ color: '#4a3a6a', fontSize: 10, letterSpacing: '0.2em', fontFamily: "'JetBrains Mono', monospace" }}>
-          BUILD 1.0.0 ◆ VOID ENGINE
-        </span>
+        {!isMobile && (
+          <span style={{ color: '#4a3a6a', fontSize: 10, letterSpacing: '0.2em', fontFamily: "'JetBrains Mono', monospace", whiteSpace: 'nowrap' }}>
+            BUILD 1.0.0 ◆ VOID ENGINE
+          </span>
+        )}
       </div>
 
       {/* ── Main layout ─────────────────────────────────── */}
       <div style={{
         position: 'relative', zIndex: 5,
         display: 'flex',
-        alignItems: 'stretch',
-        height: '100%',
-        paddingTop: 36,
+        flexDirection: isCompact ? 'column' : 'row',
+        alignItems: isCompact ? 'center' : 'stretch',
+        minHeight: '100vh',
+        paddingTop: isCompact ? 36 : 44,
+        paddingBottom: isCompact ? 56 : 44,
       }}>
 
-        {/* ── Left panel ──────────────────────────────── */}
+        {/* ── Left panel / Top section (mobile) ──────── */}
         <div style={{
-          flex: '0 0 52%',
+          flex: isCompact ? 'unset' : '0 0 52%',
+          width: '100%',
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'center',
-          padding: '0 5% 0 7%',
+          alignItems: isCompact ? 'center' : 'flex-start',
+          padding: isCompact ? '8px 16px 0' : '0 5% 0 7%',
+          textAlign: isCompact ? 'center' : 'left',
           gap: 0,
         }}>
 
           {/* Tag line */}
           <div style={{
-            display: 'flex', alignItems: 'center', gap: 12,
-            marginBottom: 16,
+            display: 'flex', alignItems: 'center', gap: 10,
+            marginBottom: isCompact ? 8 : 16,
+            justifyContent: isCompact ? 'center' : 'flex-start',
           }}>
-            <div style={{ height: 1, width: 36, background: 'rgba(168,85,247,0.5)' }} />
+            <div style={{ height: 1, width: isCompact ? 24 : 36, background: 'rgba(168,85,247,0.5)' }} />
             <span style={{
-              color: '#7c3aed', fontSize: 10, letterSpacing: '0.45em',
-              fontFamily: "'JetBrains Mono', monospace", textTransform: 'uppercase',
+              color: '#7c3aed',
+              fontSize: isCompact ? 9 : 10,
+              letterSpacing: isCompact ? '0.32em' : '0.45em',
+              fontFamily: "'JetBrains Mono', monospace",
+              textTransform: 'uppercase',
             }}>
-              DEATHLY STORIES
+              A GlobalComix Series
             </span>
+            <div style={{ height: 1, width: isCompact ? 24 : 0, background: 'rgba(168,85,247,0.5)' }} />
           </div>
 
-          {/* Glitch title */}
-          <GlitchTitle />
+          {/* Title artwork */}
+          <TitleArt compact={isCompact} />
 
           {/* Subtitle rule */}
           <div style={{
-            display: 'flex', alignItems: 'center', gap: 10, margin: '18px 0 36px',
+            display: 'flex', alignItems: 'center', gap: 10,
+            margin: isCompact ? '4px 0 18px' : '4px 0 28px',
+            width: '100%',
+            maxWidth: isCompact ? 360 : 580,
           }}>
             <div style={{ height: 1, flex: 1, background: 'linear-gradient(to right, rgba(168,85,247,0.6), transparent)' }} />
             <div style={{ width: 6, height: 6, background: '#a855f7', transform: 'rotate(45deg)' }} />
-            <div style={{ height: 1, width: 40, background: 'rgba(168,85,247,0.3)' }} />
+            <div style={{ height: 1, flex: 0.4, background: 'linear-gradient(to left, rgba(168,85,247,0.3), transparent)' }} />
           </div>
 
           {/* Tab content */}
-          {tab === 'main' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <MenuButton large onClick={onPlay} variant="primary">
-                Enter the Endless
-              </MenuButton>
-              <MenuButton onClick={() => setTab('controls')} variant="secondary">
-                Controls
-              </MenuButton>
-              <MenuButton onClick={() => setTab('lore')} variant="secondary">
-                Lore
-              </MenuButton>
-            </div>
-          )}
-
-          {tab === 'controls' && (
-            <div style={{ animation: 'fadeSlide 0.3s ease' }}>
-              <div style={{
-                background: 'rgba(8,4,20,0.88)',
-                border: '1px solid rgba(124,58,237,0.4)',
-                padding: '24px 28px',
-                clipPath: 'polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 0 100%)',
-                marginBottom: 16,
-              }}>
-                {CONTROLS.map(({ action, key }) => (
-                  <div key={action} style={{
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    padding: '7px 0',
-                    borderBottom: '1px solid rgba(124,58,237,0.1)',
-                  }}>
-                    <span style={{
-                      color: action === 'Walk → Run' ? '#00ffcc' : '#9888c0',
-                      fontSize: 12, letterSpacing: '0.08em',
-                      fontFamily: "'JetBrains Mono', monospace",
-                    }}>
-                      {action === 'Walk → Run' && '◈ '}{action}
-                    </span>
-                    <span style={{
-                      background: 'rgba(124,58,237,0.15)',
-                      border: '1px solid rgba(124,58,237,0.35)',
-                      color: '#c4b5fd',
-                      padding: '3px 10px', borderRadius: 2,
-                      fontSize: 11, fontFamily: "'JetBrains Mono', monospace",
-                      letterSpacing: '0.05em',
-                    }}>{key}</span>
-                  </div>
-                ))}
+          <div style={{ width: '100%', maxWidth: isCompact ? 360 : 380, display: 'flex', justifyContent: isCompact ? 'center' : 'flex-start' }}>
+            {tab === 'main' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%', alignItems: isCompact ? 'center' : 'flex-start' }}>
+                <MenuButton testId="enter-endless-button" large onClick={onPlay} variant="primary" compact={isCompact}>
+                  Enter the Endless
+                </MenuButton>
+                <MenuButton testId="controls-button" onClick={() => setTab('controls')} variant="secondary" compact={isCompact}>
+                  Controls
+                </MenuButton>
+                <MenuButton testId="lore-button" onClick={() => setTab('lore')} variant="secondary" compact={isCompact}>
+                  Lore
+                </MenuButton>
               </div>
-              <MenuButton onClick={() => setTab('main')} variant="secondary">← Back</MenuButton>
-            </div>
-          )}
+            )}
 
-          {tab === 'lore' && (
-            <div style={{ animation: 'fadeSlide 0.3s ease' }}>
-              <div style={{
-                background: 'rgba(8,4,20,0.88)',
-                border: '1px solid rgba(124,58,237,0.35)',
-                padding: '28px 28px',
-                clipPath: 'polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 0 100%)',
-                marginBottom: 20,
-                minHeight: 260,
-              }}>
+            {tab === 'controls' && (
+              <div data-testid="controls-panel" style={{ animation: 'fadeSlide 0.3s ease', width: '100%' }}>
                 <div style={{
-                  color: '#7c3aed', fontSize: 10,
-                  letterSpacing: '0.4em', marginBottom: 20,
-                  fontFamily: "'JetBrains Mono', monospace",
+                  background: 'rgba(8,4,20,0.88)',
+                  border: '1px solid rgba(124,58,237,0.4)',
+                  padding: isCompact ? '14px 16px' : '24px 28px',
+                  clipPath: 'polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 0 100%)',
+                  marginBottom: 16,
+                  textAlign: 'left',
                 }}>
-                  ◆ DIMENSIONAL ARCHIVE
-                </div>
-                {[
-                  ['THE ENDLESS', 'A dimension born from collapsed realities. Time fragments here. Death does not hold.'],
-                  ['MAYTRADALIS', 'A Reaper of the 7th Void. Her scythe Sorrow-Eater harvests souls across broken worlds.'],
-                  ['THE LURKER', 'Ancient plague-herald who imprisons Ava. Its presence corrupts the fabric of worlds.'],
-                  ['AVA, GRIM REAPER', 'Master Death\'s champion, taken captive. Her absence unravels the boundary between life and death.'],
-                ].map(([title, text]) => (
-                  <div key={title} style={{ marginBottom: 18 }}>
-                    <div style={{
-                      color: '#a855f7', fontSize: 10, letterSpacing: '0.3em',
-                      marginBottom: 5, fontFamily: "'JetBrains Mono', monospace",
-                    }}>{title}</div>
-                    <div style={{ color: '#9888c0', fontSize: 13, lineHeight: 1.7, fontStyle: 'italic' }}>
-                      {text}
+                  {CONTROLS.map(({ action, key }) => (
+                    <div key={action} style={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      padding: isCompact ? '5px 0' : '7px 0',
+                      borderBottom: '1px solid rgba(124,58,237,0.1)',
+                      gap: 8,
+                    }}>
+                      <span style={{
+                        color: action === 'Walk → Run' ? '#00ffcc' : '#9888c0',
+                        fontSize: isCompact ? 11 : 12, letterSpacing: '0.08em',
+                        fontFamily: "'JetBrains Mono', monospace",
+                      }}>
+                        {action === 'Walk → Run' && '◈ '}{action}
+                      </span>
+                      <span style={{
+                        background: 'rgba(124,58,237,0.15)',
+                        border: '1px solid rgba(124,58,237,0.35)',
+                        color: '#c4b5fd',
+                        padding: isCompact ? '2px 8px' : '3px 10px', borderRadius: 2,
+                        fontSize: isCompact ? 10 : 11, fontFamily: "'JetBrains Mono', monospace",
+                        letterSpacing: '0.05em',
+                        whiteSpace: 'nowrap',
+                      }}>{key}</span>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
+                <MenuButton testId="controls-back-button" onClick={() => setTab('main')} variant="secondary" compact={isCompact}>← Back</MenuButton>
               </div>
-              <MenuButton onClick={() => setTab('main')} variant="secondary">← Back</MenuButton>
-            </div>
-          )}
+            )}
 
-          {/* Lore ticker */}
-          {tab === 'main' && (
+            {tab === 'lore' && (
+              <div data-testid="lore-panel" style={{ animation: 'fadeSlide 0.3s ease', width: '100%' }}>
+                <div style={{
+                  background: 'rgba(8,4,20,0.88)',
+                  border: '1px solid rgba(124,58,237,0.35)',
+                  padding: isCompact ? '18px 16px' : '28px 28px',
+                  clipPath: 'polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 0 100%)',
+                  marginBottom: 20,
+                  textAlign: 'left',
+                }}>
+                  <div style={{
+                    color: '#7c3aed', fontSize: 10,
+                    letterSpacing: '0.4em', marginBottom: 18,
+                    fontFamily: "'JetBrains Mono', monospace",
+                  }}>
+                    ◆ DIMENSIONAL ARCHIVE
+                  </div>
+                  {[
+                    ['THE ENDLESS', 'A dimension born from collapsed realities. Time fragments here. Death does not hold.'],
+                    ['MAYTRADALIS', 'A Reaper of the 7th Void. Her scythe Sorrow-Eater harvests souls across broken worlds.'],
+                    ['THE LURKER', 'Ancient plague-herald who imprisons Ava. Its presence corrupts the fabric of worlds.'],
+                    ['AVA, GRIM REAPER', 'Master Death\'s champion, taken captive. Her absence unravels the boundary between life and death.'],
+                  ].map(([title, text]) => (
+                    <div key={title} style={{ marginBottom: 16 }}>
+                      <div style={{
+                        color: '#a855f7', fontSize: 10, letterSpacing: '0.3em',
+                        marginBottom: 5, fontFamily: "'JetBrains Mono', monospace",
+                      }}>{title}</div>
+                      <div style={{ color: '#9888c0', fontSize: isCompact ? 12 : 13, lineHeight: 1.65, fontStyle: 'italic' }}>
+                        {text}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <MenuButton testId="lore-back-button" onClick={() => setTab('main')} variant="secondary" compact={isCompact}>← Back</MenuButton>
+              </div>
+            )}
+          </div>
+
+          {/* Lore ticker (desktop only on main tab) */}
+          {tab === 'main' && !isCompact && (
             <div style={{ marginTop: 36, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
               <div style={{ color: '#4a3a6a', fontSize: 16, marginTop: 1 }}>❝</div>
               <p style={{
@@ -509,93 +543,128 @@ export default function MainMenu({ onPlay }) {
         </div>
 
         {/* ── Right panel — Character art ────────────── */}
-        <div style={{
-          flex: 1,
-          position: 'relative',
-          display: 'flex',
-          alignItems: 'flex-end',
-          justifyContent: 'center',
-          overflow: 'hidden',
-        }}>
-          {/* Background glow radial */}
+        {!isCompact && (
           <div style={{
-            position: 'absolute', inset: 0,
-            background: 'radial-gradient(ellipse at 50% 80%, rgba(124,58,237,0.22) 0%, rgba(0,255,204,0.04) 40%, transparent 70%)',
-            animation: 'auraBreath 4s ease-in-out infinite',
-            pointerEvents: 'none',
-          }} />
+            flex: 1,
+            position: 'relative',
+            display: 'flex',
+            alignItems: 'flex-end',
+            justifyContent: 'center',
+            overflow: 'hidden',
+            minHeight: 480,
+          }}>
+            {/* Background glow radial */}
+            <div style={{
+              position: 'absolute', inset: 0,
+              background: 'radial-gradient(ellipse at 50% 80%, rgba(124,58,237,0.22) 0%, rgba(0,255,204,0.04) 40%, transparent 70%)',
+              animation: 'auraBreath 4s ease-in-out infinite',
+              pointerEvents: 'none',
+            }} />
 
-          {/* Vertical light beam */}
-          <div style={{
-            position: 'absolute',
-            top: '5%', bottom: 0,
-            left: '50%', transform: 'translateX(-50%)',
-            width: '35%',
-            background: 'linear-gradient(to bottom, transparent, rgba(168,85,247,0.08) 35%, rgba(168,85,247,0.04) 70%, transparent)',
-            pointerEvents: 'none',
-            animation: 'beamFlicker 5s ease-in-out infinite',
-          }} />
+            {/* Vertical light beam */}
+            <div style={{
+              position: 'absolute',
+              top: '5%', bottom: 0,
+              left: '50%', transform: 'translateX(-50%)',
+              width: '35%',
+              background: 'linear-gradient(to bottom, transparent, rgba(168,85,247,0.08) 35%, rgba(168,85,247,0.04) 70%, transparent)',
+              pointerEvents: 'none',
+              animation: 'beamFlicker 5s ease-in-out infinite',
+            }} />
 
-          {/* Ground circle */}
-          <div style={{
-            position: 'absolute', bottom: '6%',
-            left: '50%', transform: 'translateX(-50%)',
-            width: '55%', height: 55,
-            background: 'radial-gradient(ellipse at center, rgba(168,85,247,0.25) 0%, transparent 70%)',
-            borderRadius: '50%',
-            animation: 'groundPulse 3.5s ease-in-out infinite',
-          }} />
+            {/* Ground circle */}
+            <div style={{
+              position: 'absolute', bottom: '6%',
+              left: '50%', transform: 'translateX(-50%)',
+              width: '55%', height: 55,
+              background: 'radial-gradient(ellipse at center, rgba(168,85,247,0.25) 0%, transparent 70%)',
+              borderRadius: '50%',
+              animation: 'groundPulse 3.5s ease-in-out infinite',
+            }} />
 
-          {/* Character art */}
+            {/* Character art */}
+            <div style={{
+              position: 'relative',
+              height: 'calc(100vh - 100px)',
+              maxWidth: 520,
+              animation: 'charIdle 5s ease-in-out infinite',
+            }}>
+              <img
+                src={MAYTRADALIS_ART}
+                alt="Maytradalis"
+                draggable={false}
+                style={{
+                  height: '100%',
+                  objectFit: 'contain',
+                  objectPosition: 'bottom',
+                  filter: 'brightness(1.05) saturate(1.2) drop-shadow(0 0 32px rgba(168,85,247,0.65)) drop-shadow(0 0 60px rgba(168,85,247,0.25))',
+                  userSelect: 'none',
+                }}
+              />
+            </div>
+
+            {/* Character label */}
+            <div style={{
+              position: 'absolute',
+              bottom: '8%', right: '8%',
+              background: 'rgba(8,4,20,0.85)',
+              border: '1px solid rgba(168,85,247,0.3)',
+              padding: '8px 16px',
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 10, letterSpacing: '0.35em',
+              color: '#7c3aed',
+              clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%)',
+            }}>
+              MAYTRADALIS ◆ VOID REAPER
+            </div>
+          </div>
+        )}
+
+        {/* ── Mobile character art (smaller, below buttons) ── */}
+        {isCompact && tab === 'main' && (
           <div style={{
             position: 'relative',
-            height: 'calc(100vh - 100px)',
-            maxWidth: 520,
-            animation: 'charIdle 5s ease-in-out infinite',
+            width: '100%',
+            display: 'flex',
+            justifyContent: 'center',
+            marginTop: 28,
+            pointerEvents: 'none',
           }}>
+            <div style={{
+              position: 'absolute', inset: '-10% 0',
+              background: 'radial-gradient(ellipse at 50% 75%, rgba(124,58,237,0.25) 0%, transparent 65%)',
+            }} />
             <img
               src={MAYTRADALIS_ART}
               alt="Maytradalis"
               draggable={false}
               style={{
-                height: '100%',
+                position: 'relative',
+                height: isMobile ? 260 : 340,
+                maxWidth: '85vw',
                 objectFit: 'contain',
                 objectPosition: 'bottom',
-                filter: 'brightness(1.05) saturate(1.2) drop-shadow(0 0 32px rgba(168,85,247,0.65)) drop-shadow(0 0 60px rgba(168,85,247,0.25))',
-                userSelect: 'none',
+                filter: 'brightness(1.05) drop-shadow(0 0 22px rgba(168,85,247,0.55))',
+                animation: 'charIdle 5s ease-in-out infinite',
               }}
             />
           </div>
-
-          {/* Character label */}
-          <div style={{
-            position: 'absolute',
-            bottom: '8%', right: '8%',
-            background: 'rgba(8,4,20,0.85)',
-            border: '1px solid rgba(168,85,247,0.3)',
-            padding: '8px 16px',
-            fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 10, letterSpacing: '0.35em',
-            color: '#7c3aed',
-            clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%)',
-          }}>
-            MAYTRADALIS ◆ VOID REAPER
-          </div>
-        </div>
+        )}
       </div>
 
       {/* ── Bottom status bar ───────────────────────────── */}
       <div style={{
-        position: 'absolute', bottom: 0, left: 0, right: 0,
-        height: 32,
+        position: 'fixed', bottom: 0, left: 0, right: 0,
+        height: isCompact ? 28 : 32,
         background: 'rgba(8,4,20,0.92)',
         borderTop: '1px solid rgba(124,58,237,0.25)',
         display: 'flex', alignItems: 'center',
-        padding: '0 60px',
-        gap: 24, zIndex: 10,
+        padding: isCompact ? '0 16px' : '0 60px',
+        gap: isCompact ? 12 : 24, zIndex: 10,
       }}>
         <span style={{
-          color: '#4a3a6a', fontSize: 10,
+          color: '#4a3a6a',
+          fontSize: isCompact ? 9 : 10,
           fontFamily: "'JetBrains Mono', monospace",
           letterSpacing: '0.15em',
           flex: 1,
@@ -603,33 +672,34 @@ export default function MainMenu({ onPlay }) {
         }}>
           {LORE_LINES[loreIdx]}
         </span>
-        <span style={{
-          color: '#7c3aed', fontSize: 10,
-          fontFamily: "'JetBrains Mono', monospace",
-          letterSpacing: '0.2em', flexShrink: 0,
-        }}>
-          ◆ VOID ENGINE v1.0
-        </span>
+        {!isMobile && (
+          <span style={{
+            color: '#7c3aed',
+            fontSize: 10,
+            fontFamily: "'JetBrains Mono', monospace",
+            letterSpacing: '0.2em', flexShrink: 0,
+          }}>
+            ◆ VOID ENGINE v1.0
+          </span>
+        )}
       </div>
 
       {/* ── Keyframes ───────────────────────────────────── */}
       <style>{`
-        @keyframes titleGlitch {
-          0%, 87%, 100% { transform: translateX(0); }
-          88% { transform: translateX(-3px) skewX(-1deg); }
-          90% { transform: translateX(3px); }
-          92% { transform: translateX(0); }
+        @keyframes titleFloat {
+          0%, 100% { transform: translateY(0); }
+          50%      { transform: translateY(-6px); }
         }
-        @keyframes glitchLayer1 {
-          0%, 87%, 93%, 100% { opacity: 0; transform: translateX(0); }
-          88% { opacity: 0.65; transform: translateX(-4px); clip-path: inset(45% 0 25% 0); }
-          90% { opacity: 0.35; transform: translateX(2px); clip-path: inset(15% 0 60% 0); }
+        @keyframes titleGlitchRed {
+          0%, 87%, 100% { opacity: 0; transform: translateX(0); }
+          88% { opacity: 0.55; transform: translateX(-5px); clip-path: inset(35% 0 30% 0); }
+          90% { opacity: 0.3; transform: translateX(3px); clip-path: inset(10% 0 60% 0); }
           91% { opacity: 0; }
         }
-        @keyframes glitchLayer2 {
-          0%, 88%, 93%, 100% { opacity: 0; transform: translateX(0); }
-          89% { opacity: 0.5; transform: translateX(4px); clip-path: inset(60% 0 10% 0); }
-          91% { opacity: 0.25; transform: translateX(-2px); clip-path: inset(5% 0 75% 0); }
+        @keyframes titleGlitchCyan {
+          0%, 88%, 100% { opacity: 0; transform: translateX(0); }
+          89% { opacity: 0.4; transform: translateX(5px); clip-path: inset(55% 0 10% 0); }
+          91% { opacity: 0.22; transform: translateX(-3px); clip-path: inset(5% 0 70% 0); }
           92% { opacity: 0; }
         }
         @keyframes statusBlink {

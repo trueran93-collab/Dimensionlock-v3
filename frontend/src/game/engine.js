@@ -1,4 +1,4 @@
-import { Player, ShadowDemon, VoidSprite, DimensionWatcher, LurkerCultist, BossServant, SoulSeed } from './entities.js';
+import { Player, ShadowDemon, VoidSprite, DimensionWatcher, LurkerCultist, BossServant, SoulSeed, PlagueImp, ShadowCrawler, EmberWraith, BoneHowler, HexBeast } from './entities.js';
 import { ParticleSystem } from './particles.js';
 import { UPGRADES } from './upgrades.js';
 import { Renderer } from './renderer.js';
@@ -161,6 +161,12 @@ export class GameEngine {
         if (this.player.state === 'attacking_light' && prevState !== 'attacking_light') this.sound.playLightAttack();
         if (this.player.state === 'attacking_heavy' && prevState !== 'attacking_heavy') this.sound.playHeavyAttack();
         if (this.player.state === 'attacking_special' && prevState !== 'attacking_special') this.sound.playSpecialAttack();
+        // Landing sound: from jumping/falling → idle/walking/running
+        if ((prevState === 'jumping' || prevState === 'falling') &&
+            ['idle','walking','running'].includes(this.player.state) &&
+            this.sound.playLand) {
+          this.sound.playLand();
+        }
       }
       this._prevPlayerState = this.player.state;
     } else {
@@ -176,7 +182,11 @@ export class GameEngine {
     for (const e of this.enemies) {
       if (e.dead && !e._seedDropped) {
         e._seedDropped = true;
-        const count = e.type === 'boss' ? 8 : (e.type === 'lurker_cultist' ? 3 : 2);
+        let count = 2;
+        if (e.type === 'boss') count = 8;
+        else if (e.type === 'lurker_cultist') count = 3;
+        else if (e.type === 'bone_howler' || e.type === 'hex_beast') count = 4;
+        else if (e.type === 'ember_wraith') count = 3;
         for (let i = 0; i < count; i++) {
           const seed = new SoulSeed(
             e.x + e.w / 2 + (Math.random() - 0.5) * 30,
@@ -274,8 +284,25 @@ export class GameEngine {
         this.particles.burst(enemy.x + enemy.w / 2, enemy.y + enemy.h / 3, 'void_hit');
         this.particles.burst(enemy.x + enemy.w / 2, enemy.y + enemy.h / 3, 'sparks');
         this.particles.addDamageNumber(enemy.x + enemy.w / 2, enemy.y, hitbox.damage, hitbox.type);
-        this.sound.playHit();
+        // Pulse nearest background crystal for an interactive feel
+        if (this.renderer && this.renderer.pulseNearestCrystal) {
+          this.renderer.pulseNearestCrystal(enemy.x + enemy.w / 2, enemy.y + enemy.h / 2);
+        }
+        // Different hit sound per damage tier
+        if (hitbox.type === 'heavy' || hitbox.type === 'ultimate') {
+          this.sound.playHitHeavy && this.sound.playHitHeavy();
+        } else {
+          this.sound.playHit();
+        }
+        // Death sound
+        if (enemy.dead && this.sound.playEnemyDeath) {
+          this.sound.playEnemyDeath(enemy.type);
+        }
         if (this.callbacks.onComboUpdate) this.callbacks.onComboUpdate(this.player.combo);
+      } else {
+        // Hit but blocked (e.g. HexBeast shield)
+        if (this.sound.playBlocked) this.sound.playBlocked();
+        this.particles.burst(enemy.x + enemy.w / 2, enemy.y + enemy.h / 3, 'sparks');
       }
     }
   }
@@ -354,15 +381,25 @@ export class GameEngine {
     else if (type === 'void_sprite') e = new VoidSprite(x, y, scale);
     else if (type === 'dimension_watcher') e = new DimensionWatcher(x, y, scale);
     else if (type === 'lurker_cultist') e = new LurkerCultist(x, y, scale);
+    else if (type === 'plague_imp') e = new PlagueImp(x, y, scale);
+    else if (type === 'shadow_crawler') e = new ShadowCrawler(x, y, scale);
+    else if (type === 'ember_wraith') e = new EmberWraith(x, y, scale);
+    else if (type === 'bone_howler') e = new BoneHowler(x, y, scale);
+    else if (type === 'hex_beast') e = new HexBeast(x, y, scale);
     else e = new ShadowDemon(x, y, scale);
     this.enemies.push(e);
   }
 
   getEnemyTypes() {
-    if (this.floor <= 2) return ['shadow_demon'];
-    if (this.floor <= 4) return ['shadow_demon', 'shadow_demon', 'void_sprite'];
-    if (this.floor <= 7) return ['shadow_demon', 'void_sprite', 'dimension_watcher'];
-    return ['shadow_demon', 'void_sprite', 'dimension_watcher', 'lurker_cultist'];
+    if (this.floor <= 1) return ['shadow_demon', 'shadow_crawler'];
+    if (this.floor <= 2) return ['shadow_demon', 'shadow_crawler', 'plague_imp'];
+    if (this.floor <= 3) return ['shadow_demon', 'plague_imp', 'void_sprite', 'shadow_crawler'];
+    if (this.floor <= 4) return ['shadow_demon', 'void_sprite', 'ember_wraith', 'plague_imp'];
+    if (this.floor <= 6) return ['shadow_demon', 'void_sprite', 'dimension_watcher', 'ember_wraith', 'hex_beast'];
+    if (this.floor <= 8) return ['shadow_demon', 'dimension_watcher', 'lurker_cultist', 'bone_howler', 'hex_beast'];
+    // Late game: full roster
+    return ['shadow_demon', 'void_sprite', 'dimension_watcher', 'lurker_cultist',
+            'plague_imp', 'shadow_crawler', 'ember_wraith', 'bone_howler', 'hex_beast'];
   }
 
   addProjectile(proj) {
