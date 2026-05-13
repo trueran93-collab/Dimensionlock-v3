@@ -304,7 +304,13 @@ export class Player {
     this.hp = Math.max(0, this.hp - amount);
     this.hurtTimer = 55;
     if (source !== 'fall') { this.vx = (this.facingRight ? -1 : 1) * 8; this.vy = -7; }
-    if (engine) engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'player_hurt');
+    if (engine) {
+      engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'player_hurt');
+      // Notify engine for stats + visual juice
+      if (engine.runStats) engine.runStats.damageTakenThisFloor = (engine.runStats.damageTakenThisFloor || 0) + amount;
+      if (engine.triggerShake) engine.triggerShake(7, 12, this.facingRight ? -1 : 1);
+      if (engine.triggerHitStop) engine.triggerHitStop(3);
+    }
     if (this.hp <= 0) { this.state = 'dead'; this.deathTimer = 120; }
     else this.state = 'hurt';
   }
@@ -954,7 +960,11 @@ export class SoulSeed {
       this.y += (ty - this.y) * 0.35;
       if (this.collectedTimer >= 6) {
         player.collectSoulSeed(this.value);
-        engine.particles.burst(player.x + player.w / 2, player.y + player.h / 2, 'soul_pickup');
+        if (this.rare && engine.applyRarePickup) {
+          engine.applyRarePickup(this.rare);
+        }
+        engine.particles.burst(player.x + player.w / 2, player.y + player.h / 2,
+          this.rare === 'gold' ? 'gold_pickup' : this.rare === 'rage' ? 'rage_pickup' : 'soul_pickup');
         if (engine.sound?.playSoulPickup) engine.sound.playSoulPickup();
         this.dead = true;
       }

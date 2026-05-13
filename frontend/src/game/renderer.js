@@ -1,4 +1,4 @@
-import { SPRITES, getStateFrame } from './sprites.js';
+import { SPRITES, getStateAnimation } from './sprites.js';
 
 const SPRITE_SIZE = 170; // Visual draw size for Maytradalis (larger character)
 
@@ -19,13 +19,14 @@ export class Renderer {
   }
 
   render(ctx, engine) {
-    // Background is drawn in screen space (no parallax for camera yet — keeps perf snappy)
+    // Background is drawn in screen space (parallax via shake offset for camera-like wobble)
+    const shake = engine.screenShake || { x: 0, y: 0 };
     this._drawBackground(ctx, engine.frameCount, engine.floor);
 
-    // Camera Y offset for world-space entities/platforms
+    // Camera Y offset for world-space entities/platforms + screen shake X/Y offset
     const cameraY = engine.cameraY || 0;
     ctx.save();
-    ctx.translate(0, -cameraY);
+    ctx.translate(shake.x || 0, (-cameraY) + (shake.y || 0));
 
     this._drawPlatforms(ctx, engine.platforms, engine.frameCount);
     this._drawExitDoor(ctx, engine.exitDoor, engine.frameCount);
@@ -896,7 +897,14 @@ export class Renderer {
     if (player.state === 'dead' && player.deathTimer <= 0) return;
 
     const { x, y, w, h, facingRight, state, attackTimer, attackType, hurtTimer } = player;
-    const spriteFrame = getStateFrame(state, player.animFrame, attackTimer, attackType);
+    // Total attack window (used for accurate progress through animations)
+    const totalAttack = (attackType === 'heavy' ? 34 :
+                         attackType === 'special' ? 42 :
+                         attackType === 'light' ? 18 : 0);
+    const { sheet: sheetKey, frame: spriteFrame } = getStateAnimation(
+      state, player.animFrame, attackTimer, attackType, totalAttack
+    );
+    const sheet = SPRITES[sheetKey];
 
     ctx.save();
 
@@ -914,8 +922,8 @@ export class Renderer {
       ctx.globalAlpha = 0.18;
       ctx.fillStyle = '#00ffcc';
       const shadowX = x - player.dashDir * 25;
-      if (SPRITES.maytradalis?.loaded) {
-        SPRITES.maytradalis.draw(ctx, spriteFrame, shadowX - SPRITE_SIZE * 0.15, y - 20, SPRITE_SIZE, SPRITE_SIZE, facingRight);
+      if (sheet?.loaded) {
+        sheet.draw(ctx, spriteFrame, shadowX - SPRITE_SIZE * 0.15, y - 20, SPRITE_SIZE, SPRITE_SIZE, facingRight);
       }
       ctx.restore();
     }
@@ -925,8 +933,8 @@ export class Renderer {
     const spriteY = y + h - SPRITE_SIZE + 10;
     let drewSprite = false;
 
-    if (SPRITES.maytradalis?.loaded && !SPRITES.maytradalis?.error) {
-      drewSprite = SPRITES.maytradalis.draw(ctx, spriteFrame, spriteX, spriteY, SPRITE_SIZE, SPRITE_SIZE, facingRight);
+    if (sheet?.loaded && !sheet?.error) {
+      drewSprite = sheet.draw(ctx, spriteFrame, spriteX, spriteY, SPRITE_SIZE, SPRITE_SIZE, facingRight);
     }
 
     if (!drewSprite) {

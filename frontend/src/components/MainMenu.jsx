@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import UnlocksShop from './UnlocksShop.jsx';
 
 const MAYTRADALIS_ART = 'https://customer-assets.emergentagent.com/job_gothic-action-beats/artifacts/eqvwwi5o_611d4b76933a75a5a6923ea9856fcd49.webp';
 const TITLE_ART = 'https://customer-assets.emergentagent.com/job_mobile-ui-demon-fix/artifacts/i0t28uzi_DLDS-White-1.png';
@@ -436,6 +437,9 @@ export default function MainMenu({ onPlay }) {
                 <MenuButton testId="enter-endless-button" large onClick={onPlay} variant="primary" compact={isCompact}>
                   Enter the Endless
                 </MenuButton>
+                <MenuButton testId="shop-button" onClick={() => setTab('shop')} variant="secondary" compact={isCompact}>
+                  Soul Shop
+                </MenuButton>
                 <MenuButton testId="controls-button" onClick={() => setTab('controls')} variant="secondary" compact={isCompact}>
                   Controls
                 </MenuButton>
@@ -443,6 +447,10 @@ export default function MainMenu({ onPlay }) {
                   Lore
                 </MenuButton>
               </div>
+            )}
+
+            {tab === 'shop' && (
+              <UnlocksShop onBack={() => setTab('main')} compact={isCompact} />
             )}
 
             {tab === 'controls' && (

@@ -67,6 +67,26 @@ export class GameEngine {
     this.rafId = null;
     this.frameCount = 0;
 
+    // Visual juice
+    this.hitStop = 0;                 // frames remaining where update() is mostly frozen
+    this.screenShake = { x: 0, y: 0, frames: 0, intensity: 0 };
+    this.toastQueue = [];             // [{ text, sub, color, ttl, age }]
+    this.crystalFlash = 0;            // brief white wash on heavy hits / kills
+
+    // Run statistics for end-of-run rank + floor bonuses
+    this.runStats = {
+      damageTakenThisFloor: 0,
+      timeOnFloor: 0,           // frames
+      bossKills: 0,
+      perfectFloors: 0,
+      swiftFloors: 0,
+      overkillFloors: 0,
+      totalFloorsCleared: 0,
+    };
+    // Buffs/applied unlocks from meta-progression
+    this.startBuffs = { maxHpBonus: 0, maxSpBonus: 0, extraDashCharges: 0, ultStartPct: 0 };
+    this.tempBuffs = { damageMult: 1, damageMultTimer: 0 }; // Red Rage Shard
+
     this.callbacks = callbacks;
     this.renderer = new Renderer();
     this.sound = soundEngine;
@@ -91,6 +111,38 @@ export class GameEngine {
     this.loop();
     // Start gothic rock background music
     this.sound.startMusic();
+  }
+
+  // Apply persistent unlocks from meta-progression to the freshly-created player.
+  // Called by GameCanvas right after engine construction.
+  applyStartBuffs(buffs = {}) {
+    this.startBuffs = { ...this.startBuffs, ...buffs };
+    const p = this.player;
+    if (!p) return;
+    if (buffs.maxHpBonus)       { p.maxHp += buffs.maxHpBonus; p.hp = p.maxHp; }
+    if (buffs.maxSpBonus)       { p.maxSp += buffs.maxSpBonus; p.sp = p.maxSp; }
+    if (buffs.extraDashCharges) { p.maxDashCharges = (p.maxDashCharges || 1) + buffs.extraDashCharges;
+                                  p.dashCharges    = p.maxDashCharges; }
+    if (buffs.ultStartPct)      { p.ultimateCharge = Math.min(p.maxUltimateCharge,
+                                                              (buffs.ultStartPct / 100) * p.maxUltimateCharge); }
+  }
+
+  // Trigger a directional screen shake. dir = -1 (left) | 0 (omni) | 1 (right).
+  // intensity is in px, duration in frames.
+  triggerShake(intensity, frames = 10, dir = 0) {
+    // Replace if stronger, otherwise keep ongoing shake
+    if (intensity >= this.screenShake.intensity) {
+      this.screenShake = { x: 0, y: 0, frames, intensity, dir };
+    }
+  }
+
+  // Schedule a brief hit-stop freeze (frames where update() does almost nothing).
+  triggerHitStop(frames) {
+    if (frames > this.hitStop) this.hitStop = frames;
+  }
+
+  pushToast(text, sub = '', color = '#fbbf24', ttl = 150) {
+    this.toastQueue.push({ text, sub, color, ttl, age: 0 });
   }
 
   pause() {
@@ -119,6 +171,19 @@ export class GameEngine {
 
   update() {
     this.frameCount++;
+
+    // Hit-stop freezes most simulation (but still ticks shake & particles for visual juice)
+    if (this.hitStop > 0) {
+      this.hitStop--;
+      // Still update screen shake and damage-number lifetimes during hit-stop
+      this._updateShake();
+      this.particles.update();
+      this._updateToasts();
+      return;
+    }
+    this._updateShake();
+    this._updateToasts();
+    this._updateTempBuffs();
 
     this.justPressed = new Set([...this.keysDown].filter(k => !this.prevKeys.has(k)));
     this.prevKeys = new Set(this.keysDown);
@@ -242,20 +307,36 @@ export class GameEngine {
     this._updateBubble();
     this.manageWaves();
 
+    // Tick run-stat timers
+    this.runStats.timeOnFloor++;
+
+    // Count boss kills (boss servant or future LurkerBoss)
+    for (const e of this.enemies) {
+      if (e.dead && e.type === 'boss' && !e._countedBossKill) {
+        e._countedBossKill = true;
+        this.runStats.bossKills++;
+      }
+    }
+
     if (this.callbacks.onStatsUpdate) {
       this.callbacks.onStatsUpdate({
         hp: this.player.hp, maxHp: this.player.maxHp,
         sp: this.player.sp, maxSp: this.player.maxSp,
         combo: this.player.combo,
+        bestCombo: this.bestCombo,
         floor: this.floor,
         score: this.player.score,
+        kills: this.player.kills,
         wave: this.wave,
         maxWaves: this.maxWaves,
         ultimateCharge: this.player.ultimateCharge,
         maxUltimateCharge: this.player.maxUltimateCharge,
         ultimateActive: this.player.ultimateActive,
         dashCooldown: this.player.dashCooldown,
-        spReady: this.player.sp >= 30
+        spReady: this.player.sp >= 30,
+        toasts: this.toastQueue.slice(),
+        rageActive: (this.tempBuffs.damageMultTimer || 0) > 0,
+        rageRemaining: this.tempBuffs.damageMultTimer || 0,
       });
     }
   }
@@ -296,36 +377,141 @@ export class GameEngine {
 
       const kbDir = enemy.x + enemy.w / 2 > this.player.x + this.player.w / 2 ? 1 : -1;
       const kb = hitbox.knockback || 6;
-      const didHit = enemy.takeDamage(hitbox.damage, kbDir * Math.abs(kb), this, this.player.hasLurkersBane);
+
+      // Crit roll — 12% base, scaling with combo (every 5 combo = +4% up to +20%)
+      const critChance = 0.12 + Math.min(0.20, Math.floor(this.player.combo / 5) * 0.04);
+      const isCrit = Math.random() < critChance;
+      const damageMult = (this.tempBuffs.damageMult || 1) * (isCrit ? 1.75 : 1);
+      const finalDamage = Math.max(1, Math.round(hitbox.damage * damageMult));
+
+      const didHit = enemy.takeDamage(finalDamage, kbDir * Math.abs(kb), this, this.player.hasLurkersBane);
 
       if (didHit) {
         this.player.hitEnemiesThisSwing.add(enemy);
         this.player.registerHit(enemy);
-        this.particles.burst(enemy.x + enemy.w / 2, enemy.y + enemy.h / 3, 'void_hit');
-        this.particles.burst(enemy.x + enemy.w / 2, enemy.y + enemy.h / 3, 'sparks');
-        this.particles.addDamageNumber(enemy.x + enemy.w / 2, enemy.y, hitbox.damage, hitbox.type);
-        // Pulse nearest background crystal for an interactive feel
-        if (this.renderer && this.renderer.pulseNearestCrystal) {
-          this.renderer.pulseNearestCrystal(enemy.x + enemy.w / 2, enemy.y + enemy.h / 2);
+
+        // VFX bursts
+        const cx = enemy.x + enemy.w / 2;
+        const cy = enemy.y + enemy.h / 3;
+        this.particles.burst(cx, cy, 'void_hit');
+        this.particles.burst(cx, cy, 'sparks');
+        if (isCrit) this.particles.burst(cx, cy, 'crit');
+
+        // Damage numbers (mark crit)
+        this.particles.addDamageNumber(cx, enemy.y, finalDamage, hitbox.type, { crit: isCrit });
+
+        // Hit-stop & screen shake scale by hit weight
+        if (enemy.dead) {
+          this.triggerHitStop(6);
+          this.triggerShake(8, 14, kbDir);
+          // Shatter VFX on death (colored by enemy type)
+          this.particles.shatter(cx, enemy.y + enemy.h / 2, this._enemyColor(enemy.type), 18);
+        } else if (hitbox.type === 'heavy' || hitbox.type === 'ultimate') {
+          this.triggerHitStop(4);
+          this.triggerShake(5, 10, kbDir);
+        } else if (isCrit) {
+          this.triggerHitStop(3);
+          this.triggerShake(4, 8, kbDir);
+        } else {
+          this.triggerHitStop(1);
+          this.triggerShake(2, 5, kbDir);
         }
-        // Different hit sound per damage tier
+
+        if (this.renderer && this.renderer.pulseNearestCrystal) {
+          this.renderer.pulseNearestCrystal(cx, enemy.y + enemy.h / 2);
+        }
         if (hitbox.type === 'heavy' || hitbox.type === 'ultimate') {
           this.sound.playHitHeavy && this.sound.playHitHeavy();
         } else {
           this.sound.playHit();
         }
-        // Death sound
         if (enemy.dead && this.sound.playEnemyDeath) {
           this.sound.playEnemyDeath(enemy.type);
         }
         if (this.callbacks.onComboUpdate) this.callbacks.onComboUpdate(this.player.combo);
+        if (enemy.dead) this._maybeDropRare(enemy);
       } else {
-        // Hit but blocked (e.g. HexBeast shield)
         if (this.sound.playBlocked) this.sound.playBlocked();
         this.particles.burst(enemy.x + enemy.w / 2, enemy.y + enemy.h / 3, 'sparks');
+        this.triggerShake(2, 4, kbDir);
       }
     }
   }
+
+  // Pick a thematic color for the shatter shards based on enemy type
+  _enemyColor(type) {
+    switch (type) {
+      case 'plague_imp':       return '#a3e635';
+      case 'shadow_crawler':   return '#7c3aed';
+      case 'ember_wraith':     return '#ff6600';
+      case 'bone_howler':      return '#e0e0e0';
+      case 'hex_beast':        return '#e879f9';
+      case 'lurker_cultist':   return '#22c55e';
+      case 'dimension_watcher':return '#22d3ee';
+      case 'void_sprite':      return '#c084fc';
+      case 'boss':             return '#fbbf24';
+      default:                 return '#a855f7';
+    }
+  }
+
+  // Roll for a rare drop. Called on enemy death.
+  _maybeDropRare(enemy) {
+    // Base 4% chance; boss always drops a Gold Soul Seed
+    const baseRate = enemy.type === 'boss' ? 1.0 : 0.045;
+    if (Math.random() < baseRate) {
+      // 70% Gold Soul, 30% Red Rage
+      const isGold = enemy.type === 'boss' || Math.random() < 0.7;
+      const drop = new SoulSeed(enemy.x + enemy.w / 2, enemy.y + enemy.h / 2, isGold ? 25 : 18);
+      drop.rare = isGold ? 'gold' : 'rage';
+      drop.vy = -7; drop.vx = (Math.random() - 0.5) * 4;
+      this.soulSeeds.push(drop);
+    }
+  }
+
+  _updateShake() {
+    const s = this.screenShake;
+    if (s.frames > 0) {
+      s.frames--;
+      const decay = Math.max(0, s.frames / 12);
+      const mag = s.intensity * decay;
+      const biasX = s.dir ? s.dir * 0.6 : 0;
+      s.x = (biasX + (Math.random() - 0.5) * 2) * mag;
+      s.y = (Math.random() - 0.5) * 2 * mag;
+      if (s.frames <= 0) { s.x = 0; s.y = 0; s.intensity = 0; }
+    } else {
+      s.x = 0; s.y = 0; s.intensity = 0;
+    }
+  }
+
+  _updateToasts() {
+    for (const t of this.toastQueue) t.age++;
+    this.toastQueue = this.toastQueue.filter(t => t.age < t.ttl);
+  }
+
+  _updateTempBuffs() {
+    if (this.tempBuffs.damageMultTimer > 0) {
+      this.tempBuffs.damageMultTimer--;
+      if (this.tempBuffs.damageMultTimer <= 0) this.tempBuffs.damageMult = 1;
+    }
+  }
+
+  // Called when player picks up a rare drop (entities.js SoulSeed.update notifies us)
+  applyRarePickup(rare) {
+    if (rare === 'gold') {
+      // Bonus shards at run-end will be added; here just play a flashy toast + particle burst
+      this.player.score += 250;
+      this.pushToast('GOLD SOUL', '+250 score · bonus shards on run end', '#fbbf24', 140);
+      this.particles.burst(this.player.x + this.player.w / 2, this.player.y, 'gold_pickup');
+      this.runStats.goldSouls = (this.runStats.goldSouls || 0) + 1;
+    } else if (rare === 'rage') {
+      this.tempBuffs.damageMult = 1.5;
+      this.tempBuffs.damageMultTimer = 600; // 10 seconds @ 60fps
+      this.pushToast('RED RAGE SHARD', '+50% damage for 10s', '#ff3366', 140);
+      this.particles.burst(this.player.x + this.player.w / 2, this.player.y, 'rage_pickup');
+      this.runStats.rageShards = (this.runStats.rageShards || 0) + 1;
+    }
+  }
+
 
   dealEnemyDamage(player, amount, engine) {
     player.takeDamage(amount, engine);
@@ -337,7 +523,14 @@ export class GameEngine {
       if (this.gameState !== 'game_over') {
         this.gameState = 'game_over';
         if (this.callbacks.onGameOver) {
-          this.callbacks.onGameOver({ floor: this.floor, score: this.player.score, kills: this.player.kills });
+          this.callbacks.onGameOver({
+            floor: this.floor,
+            score: this.player.score,
+            kills: this.player.kills,
+            bestCombo: this.runStats.runBestCombo || this.bestCombo || 0,
+            perfectFloors: this.runStats.perfectFloors || 0,
+            bossKills: this.runStats.bossKills || 0,
+          });
         }
       }
       return;
@@ -345,6 +538,7 @@ export class GameEngine {
 
     // Track best combo for floor-complete display
     if (this.player.combo > this.bestCombo) this.bestCombo = this.player.combo;
+    if (this.player.combo > (this.runStats.runBestCombo || 0)) this.runStats.runBestCombo = this.player.combo;
 
     // Door is already up — check entry
     if (this.exitDoor && this.exitDoor.opened && !this.doorEntered) {
@@ -565,6 +759,30 @@ export class GameEngine {
       const upg = UPGRADES.find(u => u.id === upgradeId);
       if (upg) this.player.applyUpgrade(upg);
     }
+    // Floor-clear bonus computation BEFORE we advance counters
+    const dmgTaken = this.runStats.damageTakenThisFloor || 0;
+    const timeOnFloor = this.runStats.timeOnFloor || 0;
+    const tags = [];
+    if (dmgTaken === 0) {
+      tags.push({ label: 'PERFECT', sub: '+15 shards', color: '#fbbf24' });
+      this.runStats.perfectFloors++;
+    }
+    if (timeOnFloor > 0 && timeOnFloor < 60 * 75) { // < 75s @ 60fps
+      tags.push({ label: 'SWIFT', sub: '+10 shards', color: '#00ffcc' });
+      this.runStats.swiftFloors++;
+    }
+    if (this.bestCombo >= 20) {
+      tags.push({ label: 'OVERKILL', sub: '+12 shards', color: '#ff3366' });
+      this.runStats.overkillFloors++;
+    }
+    if (tags.length > 0) {
+      tags.forEach((t, i) => {
+        setTimeout(() => this.pushToast(t.label, t.sub, t.color, 150), i * 250);
+      });
+    }
+    if (this.callbacks.onFloorBonus) this.callbacks.onFloorBonus({ tags, floor: this.floor });
+
+    this.runStats.totalFloorsCleared++;
     this.floor++;
     this.wave = 0;
     const isBossFloor = this.floor % 5 === 0;
@@ -578,6 +796,9 @@ export class GameEngine {
     this.exitDoor = null;
     this.doorEntered = false;
     this.bestCombo = 0;
+    // Reset per-floor stats
+    this.runStats.damageTakenThisFloor = 0;
+    this.runStats.timeOnFloor = 0;
     this.generateFloor();
     // Spawn player just above the ground at the left
     this.player.x = 200;

@@ -4,6 +4,9 @@ import { getRandomUpgrades } from '../game/upgrades.js';
 import UpgradeScreen from './UpgradeScreen.jsx';
 import BossWarning from './BossWarning.jsx';
 import MobileControls from './MobileControls.jsx';
+import ToastOverlay, { getComboRank } from './ToastOverlay.jsx';
+import { fetchProgress, computeStartBuffs } from '../services/progress.js';
+import { achievementTracker } from '../services/achievements.js';
 
 const useIsTouch = () => {
   const [isTouch, setIsTouch] = useState(false);
@@ -57,7 +60,8 @@ export default function GameCanvas({ onGameOver, onReturnToMenu, onFloorComplete
     hp: 100, maxHp: 100, sp: 100, maxSp: 100,
     combo: 0, floor: 1, score: 0, wave: 1, maxWaves: 3,
     ultimateCharge: 0, maxUltimateCharge: 100,
-    ultimateActive: false, dashCooldown: 0, spReady: true
+    ultimateActive: false, dashCooldown: 0, spReady: true,
+    toasts: [], rageActive: false, rageRemaining: 0,
   });
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [showBossWarning, setShowBossWarning] = useState(false);
@@ -67,6 +71,7 @@ export default function GameCanvas({ onGameOver, onReturnToMenu, onFloorComplete
   const usedUpgradesRef = useRef([]);
   const [mobileControlsOn, setMobileControlsOn] = useState(false);
   const [paused, setPaused] = useState(false);
+  const buffsRef = useRef({ maxHpBonus: 0, maxSpBonus: 0, extraDashCharges: 0, ultStartPct: 0 });
 
   // Sync default visibility once isTouch is detected
   useEffect(() => { setMobileControlsOn(isTouch); }, [isTouch]);
@@ -132,8 +137,31 @@ export default function GameCanvas({ onGameOver, onReturnToMenu, onFloorComplete
   }, []);
 
   const handleGameOver = useCallback((result) => {
+    // Persist any newly-unlocked achievements to backend
+    achievementTracker.persist();
     onGameOver(result);
   }, [onGameOver]);
+
+  // Stats update wrapper: checks achievements + forwards to setStats
+  const handleStatsUpdate = useCallback((newStats) => {
+    // Compose check payload (cumulative + per-run)
+    if (engineRef.current) {
+      const e = engineRef.current;
+      const checkStats = {
+        bestCombo: e.runStats?.runBestCombo || newStats.combo || 0,
+        floor: newStats.floor || 0,
+        totalKills: newStats.kills || 0,
+        bossKills: e.runStats?.bossKills || 0,
+        perfectFloors: e.runStats?.perfectFloors || 0,
+        goldSouls: e.runStats?.goldSouls || 0,
+      };
+      const newly = achievementTracker.check(checkStats);
+      for (const ach of newly) {
+        e.pushToast(ach.label, ach.sub, ach.color, 180);
+      }
+    }
+    setStats(newStats);
+  }, []);
 
   const handleUpgradeSelect = useCallback((upgradeId) => {
     setShowUpgrade(false);
@@ -149,19 +177,39 @@ export default function GameCanvas({ onGameOver, onReturnToMenu, onFloorComplete
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const engine = new GameEngine(canvas, {
-      onStatsUpdate: setStats,
-      onFloorClear: handleFloorClear,
-      onFloorComplete: handleEngineFloorComplete,
-      onBossWarning: handleBossWarning,
-      onGameOver: handleGameOver,
-      onPauseToggle: handlePauseToggle,
-    });
-    engineRef.current = engine;
-    engine.start();
+    let cancelled = false;
+    let engine = null;
 
-    return () => { engine.stop(); };
-  }, [handleFloorClear, handleEngineFloorComplete, handleBossWarning, handleGameOver, handlePauseToggle]);
+    (async () => {
+      // Pull persistent unlocks from the server (or cache/offline fallback)
+      let progress = null;
+      try { progress = await fetchProgress(); } catch (_) { progress = null; }
+      if (cancelled) return;
+
+      // Hydrate achievement tracker (so we don't re-grant them every session)
+      try { await achievementTracker.hydrate(); achievementTracker.reset(); } catch (_) {}
+
+      const buffs = computeStartBuffs(progress?.unlocks);
+      buffsRef.current = buffs;
+
+      engine = new GameEngine(canvas, {
+        onStatsUpdate: handleStatsUpdate,
+        onFloorClear: handleFloorClear,
+        onFloorComplete: handleEngineFloorComplete,
+        onBossWarning: handleBossWarning,
+        onGameOver: handleGameOver,
+        onPauseToggle: handlePauseToggle,
+      });
+      engine.applyStartBuffs(buffs);
+      engineRef.current = engine;
+      engine.start();
+    })();
+
+    return () => {
+      cancelled = true;
+      if (engine) engine.stop();
+    };
+  }, [handleFloorClear, handleEngineFloorComplete, handleBossWarning, handleGameOver, handlePauseToggle, handleStatsUpdate]);
 
   const hpPct = Math.max(0, (stats.hp / stats.maxHp) * 100);
   const spPct = Math.max(0, (stats.sp / stats.maxSp) * 100);
@@ -204,8 +252,18 @@ export default function GameCanvas({ onGameOver, onReturnToMenu, onFloorComplete
           }}>
             {/* HP Bar */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
-              <span style={{ color: '#ff3366', fontSize: 11, minWidth: 22, textShadow: '0 0 8px #ff3366' }}>HP</span>
-              <div style={{ width: 150, height: 11, background: '#1a0a2e', border: '1px solid #7c3aed55' }}>
+              <span style={{
+                color: '#ff3366', fontSize: 11, minWidth: 22,
+                textShadow: '0 0 8px #ff3366',
+                animation: hpPct < 30 ? 'lowHpFlash 0.7s ease-in-out infinite' : 'none'
+              }}>HP</span>
+              <div style={{
+                width: 150, height: 11,
+                background: '#1a0a2e',
+                border: `1px solid ${hpPct < 30 ? '#ff3366' : '#7c3aed55'}`,
+                boxShadow: hpPct < 30 ? '0 0 16px rgba(255,51,102,0.6)' : 'none',
+                transition: 'box-shadow 0.3s',
+              }}>
                 <div
                   data-testid="hp-bar"
                   style={{
@@ -286,23 +344,71 @@ export default function GameCanvas({ onGameOver, onReturnToMenu, onFloorComplete
             </div>
           </div>
 
-          {/* Combo counter */}
-          {stats.combo >= 3 && (
+          {/* Combo counter with rank letter */}
+          {stats.combo >= 3 && (() => {
+            const rank = getComboRank(stats.combo) || { label: 'D', color: '#fff', glow: '#7c3aed' };
+            return (
+              <div
+                data-testid="combo-display"
+                style={{
+                  position: 'absolute', top: '50%', left: '50%',
+                  transform: `translate(-50%, -60%) scale(${hudScale})`,
+                  textAlign: 'center',
+                  pointerEvents: 'none',
+                  fontFamily: "'JetBrains Mono', monospace",
+                }}
+              >
+                <div
+                  data-testid="combo-rank"
+                  style={{
+                    fontFamily: "'Cormorant Garamond', serif",
+                    color: rank.color,
+                    fontSize: 78,
+                    fontWeight: 700,
+                    lineHeight: 1,
+                    textShadow: `0 0 26px ${rank.glow}, 0 0 60px ${rank.glow}88`,
+                    animation: 'comboPop 0.3s ease-out',
+                  }}
+                >
+                  {rank.label}
+                </div>
+                <div style={{
+                  color: rank.color, fontSize: 22, fontWeight: 700,
+                  letterSpacing: '0.18em',
+                  textShadow: `0 0 14px ${rank.glow}`,
+                  marginTop: 4,
+                }}>
+                  {stats.combo}<span style={{ fontSize: 13, opacity: 0.8 }}>×</span> COMBO
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Rage Shard indicator */}
+          {stats.rageActive && (
             <div
-              data-testid="combo-display"
+              data-testid="rage-indicator"
               style={{
-                position: 'absolute', top: '50%', left: '50%',
-                transform: `translate(-50%, -60%) scale(${hudScale})`,
-                color: '#fbbf24', fontSize: 28,
-                textShadow: '0 0 20px #fbbf24, 0 0 40px #f59e0b',
-                fontWeight: 'bold', letterSpacing: '0.1em',
-                animation: 'none',
-                pointerEvents: 'none'
+                position: 'absolute', top: 100, left: 16,
+                transform: `scale(${hudScale})`, transformOrigin: 'top left',
+                color: '#ff3366',
+                background: 'rgba(40,4,12,0.85)',
+                border: '1px solid #ff3366',
+                padding: '4px 12px',
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: 10,
+                letterSpacing: '0.3em',
+                textShadow: '0 0 12px #ff3366',
+                boxShadow: '0 0 20px rgba(255,51,102,0.5)',
+                animation: 'ragePulse 0.6s ease-in-out infinite',
               }}
             >
-              {stats.combo}x COMBO
+              ◈ RAGE {Math.ceil(stats.rageRemaining / 60)}s
             </div>
           )}
+
+          {/* Toasts (floor-clear bonus tags, achievements, pickups) */}
+          <ToastOverlay toasts={stats.toasts || []} scale={hudScale} />
 
           {/* Ultimate active flash */}
           {stats.ultimateActive && (
@@ -478,6 +584,18 @@ export default function GameCanvas({ onGameOver, onReturnToMenu, onFloorComplete
         @keyframes ultPulse {
           0%, 100% { background-position: 0% 0%; }
           50% { background-position: 100% 0%; }
+        }
+        @keyframes comboPop {
+          0%   { transform: translate(-50%, -60%) scale(1.6); opacity: 0.6; }
+          100% { transform: translate(-50%, -60%) scale(1);   opacity: 1; }
+        }
+        @keyframes ragePulse {
+          0%, 100% { box-shadow: 0 0 20px rgba(255,51,102,0.5); }
+          50%      { box-shadow: 0 0 32px rgba(255,51,102,0.9); }
+        }
+        @keyframes lowHpFlash {
+          0%, 100% { opacity: 0.6; }
+          50%      { opacity: 1; }
         }
       `}</style>
     </div>

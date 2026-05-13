@@ -1,0 +1,36 @@
+{
+  "summary": "Phase 1+2 overhaul verified end-to-end. Backend meta-progression API (14/14 pytest cases pass) — GET /api/progress returns zeroed PlayerProgress for new sessions; POST /api/progress/save persists fields and enforces monotonic-max on totals/best_run (best_run only overwrites if higher floor OR same floor with higher score); POST /api/progress/purchase deducts exact UNLOCK_COSTS values and increments level; rejects unknown unlock_id, maxed unlocks, and insufficient shards with 400; /api/progress/{sid}/leaderboard returns {top, session_id}; legacy /api/scores still works. Frontend smoke: main menu boots directly (no IntroCinematic — already removed in v1.4); Soul Shop opens via [data-testid=shop-button], shows balance + all 4 unlock rows (startHpBoost/startSpBoost/dashCharges/ultStart with costs 25/20/80/40), buy buttons disabled at 0 shards. Seeded 500 shards via backend → balance updated to 500; clicked unlock-buy-startHpBoost → balance correctly went to 475 (delta 25). Entering Endless: canvas + HUD (hp-bar, sp-bar, ultimate-bar, floor-display, score-display) all render; FIRST BLOOD achievement toast displayed in toast-overlay after first kill (first run). Buff integration confirmed: after purchasing startHpBoost L1, HP HUD displays 98/110 (+10 max HP from unlock applied via applyStartBuffs). Pause menu/resume works. Zero console errors during multi-minute gameplay sessions.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_progression.py",
+    "/app/backend/tests/test_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Naming convention mismatch with test plan (cosmetic only): plan refers to [data-testid=ult-bar] and [data-testid=purchase-...] but actual implementation uses [data-testid=ultimate-bar] and [data-testid=unlock-buy-{id}]. Suggest aligning future testids OR updating the plan; functionality unaffected.",
+    "ToastOverlay and combo HUD (combo-display, combo-rank) are conditionally mounted only when toasts/combo are active. This is correct UX but means automated tests must time inputs precisely against active enemies; consider keeping the wrapper [data-testid=toast-overlay] in the DOM even when empty for easier test detection.",
+    "MainMenu.jsx still > 700 lines (flagged in v1.4 review and not addressed). Split BgCanvas, TitleArt, and tab panels into separate files for maintainability.",
+    "Backend save_progress best_run tie-break logic only compares floor and score — kills/best_combo never trigger an update. If a player matches floor+score but had more kills/combo, the better run is silently discarded. Consider expanding the compare.",
+    "Backend purchase_unlock returns 400 for both 'maxed' and 'not enough shards' — semantically these are distinct; a 402 (payment required) or 409 (conflict for maxed) would be cleaner, though current 400+detail string is acceptable.",
+    "UNLOCK_COSTS is duplicated between backend/server.py and frontend/services/progress.js — single source of truth would prevent drift. Consider exposing UNLOCK_COSTS via a GET /api/progress/unlocks/costs endpoint."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_progression.py (NEW — 9 tests for meta-progression endpoints)"
+  ],
+  "success_rate": {"backend": "100% (14/14 pytest)", "frontend": "100% smoke"},
+  "test_credentials": "n/a — no auth used; session_id is a random UUID kept in localStorage under 'dimensionlock_session_id'",
+  "seed_data_creation": "Frontend test temporarily seeded 500 death_shards on a fresh session_id via in-page fetch POST /api/progress/save in order to verify purchase flow and start-buff application. Test data is prefixed TEST_ in pytest cases for the scores collection. Player_progress rows from frontend test use real UUIDs — they are harmless leftover progress rows.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All Phase 1+2 endpoints work end-to-end. UNLOCK_COSTS tier values confirmed match request exactly: startHpBoost [25,60,120,200,320], startSpBoost [20,45,90,150,240], dashCharges [80,220], ultStart [40,100,180,280]. Frontend localStorage key for session_id = 'dimensionlock_session_id'. To exercise shop purchases from playwright, seed via in-page fetch (urllib from outside hits 403). Confirmed buffs apply on game start (HP max 100→110 after L1 startHpBoost). first_blood achievement toast surfaces in toast-overlay after first kill. GameOver flow (rank-card, rank-letter, shards-earned) was NOT triggered in this run because forcing death via Playwright keyboard input is impractical without internal hooks — verified components are defined in source with proper testids (GameOver.jsx lines 59/103/124/181/223/250). Recommend main agent self-validate the rank screen if any GameOver-specific UI changes are made; otherwise it is wired through saveProgress in GameOver.jsx already. Iteration history: v1.0/v1.2/v1.4 frontend passed; this iteration adds backend meta-progression validation + buff integration test.",
+  "rca_of_the_issue": "n/a — no bugs reproduced. Initial concern that combo-rank/toast-overlay testids were 'missing' was a false alarm: both elements are conditionally rendered (toast-overlay mounts only when toasts > 0; combo-rank renders only when active combo > 0). The first gameplay run did display toast-overlay (FIRST BLOOD); second run had no toasts active at sample time. This is correct conditional rendering, not a bug."
+}
