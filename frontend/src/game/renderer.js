@@ -590,6 +590,27 @@ export class Renderer {
       ctx.restore();
     }
 
+    // ── Running speed-lines (afterimage streaks) ──────────
+    if (state === 'running') {
+      ctx.save();
+      const dir = facingRight ? -1 : 1;
+      const baseX = facingRight ? x : x + w;
+      for (let i = 0; i < 6; i++) {
+        const lineY  = y + h * 0.22 + i * h * 0.11;
+        const len    = 22 + Math.sin(frame * 0.4 + i * 0.8) * 9;
+        const alpha  = (0.38 - i * 0.045) * (0.5 + Math.sin(frame * 0.25 + i) * 0.5);
+        ctx.globalAlpha = Math.max(0, alpha);
+        ctx.strokeStyle = i % 2 === 0 ? '#a855f7' : '#c084fc';
+        ctx.lineWidth   = 1.8 - i * 0.22;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(baseX, lineY);
+        ctx.lineTo(baseX + dir * len, lineY);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
     ctx.restore();
   }
 

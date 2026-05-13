@@ -62,6 +62,8 @@ export class Player {
 
     // Running trail timer
     this.runTrailTimer = 0;
+    // Walk-to-run hold timer (frames held, 0=stopped, ≥35=running)
+    this.runHoldTimer = 0;
 
     // Anim
     this.animFrame = 0;
@@ -130,9 +132,21 @@ export class Player {
     const canMove = !['attacking_heavy','attacking_special'].includes(this.state) && !this.isDashing;
 
     if (canMove) {
-      if (keys.left) { this.vx = -this.speed; this.facingRight = false; }
-      else if (keys.right) { this.vx = this.speed; this.facingRight = true; }
-      else { this.vx *= 0.75; if (Math.abs(this.vx) < 0.5) this.vx = 0; }
+      if (keys.left) {
+        this.runHoldTimer = Math.min(this.runHoldTimer + 1, 70);
+        const spd = this.runHoldTimer >= 35 ? this.speed : Math.ceil(this.speed * 0.58);
+        this.vx = -spd;
+        this.facingRight = false;
+      } else if (keys.right) {
+        this.runHoldTimer = Math.min(this.runHoldTimer + 1, 70);
+        const spd = this.runHoldTimer >= 35 ? this.speed : Math.ceil(this.speed * 0.58);
+        this.vx = spd;
+        this.facingRight = true;
+      } else {
+        this.runHoldTimer = 0;
+        this.vx *= 0.75;
+        if (Math.abs(this.vx) < 0.5) this.vx = 0;
+      }
     }
 
     if (keys.jumpJustPressed) {
@@ -354,7 +368,9 @@ export class Player {
     if (this.isDashing) { this.state = 'dashing'; return; }
     if (this.attackTimer > 0) return;
     if (!this.onGround) this.state = this.vy < 0 ? 'jumping' : 'falling';
-    else this.state = Math.abs(this.vx) > 0.5 ? 'running' : 'idle';
+    else this.state = Math.abs(this.vx) > 0.5
+      ? (this.runHoldTimer >= 35 ? 'running' : 'walking')
+      : 'idle';
   }
 }
 

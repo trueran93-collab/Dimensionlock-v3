@@ -127,8 +127,11 @@ export function getStateFrame(state, animFrame, attackTimer, attackType) {
     case 'idle':
       // Cycle frames 0-1 slowly
       return Math.floor(animFrame / 6) % 2;
+    case 'walking':
+      // Same frames as running but slower cycle → visually distinct walk pace
+      return Math.floor(animFrame / 6) % 4;
     case 'running':
-      // Cycle frames 0-3 for walk
+      // Fast cycle frames 0-3
       return Math.floor(animFrame / 3) % 4;
     case 'jumping':
     case 'falling':
