@@ -49,6 +49,21 @@ Main character: **Maytradalis** — reaper-in-training with purple hair, black g
 - New particle presets: `run_trail`, `ultimate_explosion`, `ultimate_spin`, `soul_pickup`
 - New sounds: `playSoulPickup`, `playUltimate`
 
+### v1.4 (2026-02-13) — Player Polish & World Depth **(this session)**
+- **Intro cutscene removed** — `App.js` boots directly to MainMenu. `IntroCinematic.jsx` deleted.
+- **Main Menu redesign** — uses the official "Dimension Lock — Deathly Stories" GlobalComix title artwork (provided by user) with subtle glitch overlay layers, animated title float, and tagline "A GlobalComix Series". Fully responsive: stacks vertically <1024px, scaled fonts/buttons <768px, character art repositions below buttons on mobile.
+- **Larger characters** — player hitbox 56×92 (was 44×72), sprite draw size 170 (was 130). Enemy hitboxes proportionally enlarged (~20–25%): ShadowDemon 50×78, VoidSprite 36×36, DimensionWatcher 56×56, LurkerCultist 46×86, BossServant 100×138. Attack hitboxes scaled to match.
+- **5 new demonic enemy types**:
+  - **Plague Imp** — green goblin with horns + venom drips; winds up & charges
+  - **Shadow Crawler** — low spider-like creature, lunges quickly
+  - **Ember Wraith** — floating fire ghoul, lobs fire projectiles
+  - **Bone Howler** — skeletal summoner, raises arms and spawns Void Sprites
+  - **Hex Beast** — horned brute with periodic shield phase (parries + reflects)
+- **Interactive backgrounds** — per-floor floating crystals that pulse when player lands a hit (`renderer.pulseNearestCrystal` hook), swaying hanging chains, occasional lightning strikes.
+- **Mobile UI scaling fixed** — `GameCanvas` measures container width via `ResizeObserver` and applies `transform: scale(hudScale)` (clamped 0.45–1) to HP/SP/ULT bars, Floor/Score panel, pause button, combo + ultimate text. `MobileControls` adapt button size + edge inset to viewport width.
+- **Sound overhaul** — 8 new SFX methods on `soundEngine`: `playHitHeavy` (extra thwack for heavy/ult), `playLand` (jump-landing soft thud), `playBlocked` (parry metallic clink), `playEnemyDeath(type)` (type-specific wail+splat), `playProjectileFire` (fire shoosh), `playEnemyCharge` (rising windup), `playSummon` (eerie chord rise + whoosh), `playUiClick`. Engine wires `playEnemyDeath` to enemy kills, `playHitHeavy` to heavy/ultimate hits, `playLand` to airborne→ground state changes, `playBlocked` to Hex Beast shield blocks.
+- **Viewport meta** — `maximum-scale=1, user-scalable=no, viewport-fit=cover` to prevent unintended zoom on mobile.
+
 ## Controls (v1.2)
 | Action | Keyboard | Mobile |
 |--------|----------|--------|
@@ -63,21 +78,25 @@ Main character: **Maytradalis** — reaper-in-training with purple hair, black g
 ## Prioritized Backlog
 
 ### P0
-- [ ] Mobile portrait canvas size polish (currently leaves dark gap; consider letterbox or 60vh aspect cap)
+- [x] ~~Remove intro cutscenes — boot straight to menu~~ ✅ v1.4
+- [x] ~~Mobile UI scaling — HUD + menu~~ ✅ v1.4
 - [ ] Floor 5 boss redesigned as actual Lurker plague doctor entity (current boss is generic Lurker Servant)
 - [ ] Persist high-score leaderboard to backend (MongoDB `/api/scores`)
+- [ ] Mobile portrait gameplay: shrink dark band above on-screen controls (move canvas to top or letterbox)
 
 ### P1
 - [ ] Story progression: Save Grim Reaper Ava milestone after boss 3
-- [ ] More biome variety per theme tier (e.g. floor 11-15 add hellfire ruins enemies)
+- [ ] Per-floor biome enemy weighting (e.g. ember-heavy in hellfire ruins, hex/howler-heavy in void blue cathedral)
 - [ ] Dialogue beats between floors (Master Death taunts/encourages)
 - [ ] Additional ultimate variants unlocked via upgrades
+- [ ] Split `MainMenu.jsx` into BgCanvas + TitleArt + TabPanels modules (currently 730 lines)
 
 ### P2
 - [ ] Touch swipe gestures (swipe up to jump, swipe right to dash)
-- [ ] Settings menu (volume, controls remap)
+- [ ] Settings menu (volume, controls remap, master volume slider)
 - [ ] Achievement system
 - [ ] Daily challenge floors
+- [ ] Save/load high-score leaderboard to backend
 
 ## Lore
 > Maytradalis, reaper-in-training, walks the Endless — the space between realities.
@@ -87,3 +106,4 @@ Main character: **Maytradalis** — reaper-in-training with purple hair, black g
 ## Test Results
 - iteration_1 (v1.0): Backend 100%, Frontend 100%
 - iteration_2 (v1.2): Frontend 100%. Verified: HUD bars (HP/SP/ULT), all mobile-* testids on 390x844, desktop hides controls at 1280x720, soul-seed → ULT charge integration confirmed (0% → 86% via combat), keyboard inputs route correctly, cyberpunk/gothic background visually confirmed. Only minor design polish: mobile portrait canvas centering.
+- iteration_3 (v1.4): Frontend 100%. Verified: no IntroCinematic, new title artwork renders, all menu buttons functional, gameplay works (score 0→384, no console errors), HUD + mobile controls scale at 390x844 and 360x640, 5 new enemy classes + renderer methods + sound methods all present, interactive crystals/chains visible. 0 console errors.
