@@ -19,8 +19,16 @@ export class Renderer {
   }
 
   render(ctx, engine) {
+    // Background is drawn in screen space (no parallax for camera yet — keeps perf snappy)
     this._drawBackground(ctx, engine.frameCount, engine.floor);
+
+    // Camera Y offset for world-space entities/platforms
+    const cameraY = engine.cameraY || 0;
+    ctx.save();
+    ctx.translate(0, -cameraY);
+
     this._drawPlatforms(ctx, engine.platforms, engine.frameCount);
+    this._drawExitDoor(ctx, engine.exitDoor, engine.frameCount);
     this._drawSoulSeeds(ctx, engine.soulSeeds || [], engine.frameCount);
     this._drawProjectiles(ctx, engine.projectiles);
     engine.particles.render(ctx);
@@ -28,6 +36,231 @@ export class Renderer {
     this._drawFlybutt(ctx, engine.flybutt, engine.frameCount);
     this._drawPlayer(ctx, engine.player, engine.frameCount);
     this._drawUltimateAura(ctx, engine.player, engine.frameCount);
+    this._drawSpeechBubble(ctx, engine);
+
+    ctx.restore();
+  }
+
+  // ─── Cathedral exit door ─────────────────────────────────────────
+  _drawExitDoor(ctx, door, frame) {
+    if (!door) return;
+    const { x, y, w, h, openProgress, glow } = door;
+    const cx = x + w / 2;
+    const pulse = 1 + Math.sin(glow) * 0.08;
+
+    // Outer glow halo
+    ctx.save();
+    const halo = ctx.createRadialGradient(cx, y + h / 2, 10, cx, y + h / 2, w * 1.5 * pulse);
+    halo.addColorStop(0, 'rgba(255,255,255,0.35)');
+    halo.addColorStop(0.3, 'rgba(192,132,252,0.25)');
+    halo.addColorStop(1, 'transparent');
+    ctx.fillStyle = halo;
+    ctx.beginPath();
+    ctx.arc(cx, y + h / 2, w * 1.5 * pulse, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.shadowColor = '#a855f7';
+    ctx.shadowBlur = 24;
+
+    // Door frame (stone arch)
+    const archGrad = ctx.createLinearGradient(x, y, x, y + h);
+    archGrad.addColorStop(0, '#3a2548');
+    archGrad.addColorStop(0.5, '#241432');
+    archGrad.addColorStop(1, '#0c0418');
+    ctx.fillStyle = archGrad;
+    ctx.beginPath();
+    ctx.moveTo(x - 14, y + h);
+    ctx.lineTo(x - 14, y + 40);
+    ctx.quadraticCurveTo(x + w / 2, y - 26, x + w + 14, y + 40);
+    ctx.lineTo(x + w + 14, y + h);
+    ctx.closePath();
+    ctx.fill();
+
+    // Frame highlight
+    ctx.strokeStyle = '#a855f7';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x - 10, y + h);
+    ctx.lineTo(x - 10, y + 42);
+    ctx.quadraticCurveTo(x + w / 2, y - 20, x + w + 10, y + 42);
+    ctx.lineTo(x + w + 10, y + h);
+    ctx.stroke();
+
+    // Glowing rune at apex
+    ctx.shadowBlur = 18;
+    ctx.fillStyle = '#fbbf24';
+    ctx.beginPath();
+    ctx.arc(cx, y - 8, 6 + Math.sin(glow * 2) * 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Inner doorway — split door panels (slide open with openProgress)
+    const innerInset = 10;
+    const iX = x + innerInset, iY = y + 18, iW = w - innerInset * 2, iH = h - innerInset;
+    // Light bleeding through (revealed amount)
+    if (openProgress > 0) {
+      const lightGrad = ctx.createLinearGradient(iX + iW / 2, iY, iX + iW / 2, iY + iH);
+      lightGrad.addColorStop(0, '#ffffff');
+      lightGrad.addColorStop(0.4, '#f0e6ff');
+      lightGrad.addColorStop(1, '#c084fc');
+      ctx.fillStyle = lightGrad;
+      ctx.shadowColor = '#fff';
+      ctx.shadowBlur = 30;
+      ctx.fillRect(iX, iY, iW, iH);
+
+      // Pulsing inner core
+      ctx.fillStyle = '#fff';
+      ctx.globalAlpha = 0.4 + Math.sin(glow * 3) * 0.2;
+      ctx.fillRect(iX + iW * 0.3, iY + iH * 0.1, iW * 0.4, iH * 0.8);
+      ctx.globalAlpha = 1;
+    }
+
+    // Left door panel
+    const slide = openProgress * (iW * 0.5);
+    ctx.fillStyle = '#1a0a28';
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = '#000';
+    // Left panel
+    ctx.fillRect(iX, iY, iW * 0.5 - slide, iH);
+    // Right panel
+    ctx.fillRect(iX + iW * 0.5 + slide, iY, iW * 0.5 - slide, iH);
+
+    // Panel details (cross-iron grids on closed parts)
+    ctx.strokeStyle = '#3a2548';
+    ctx.lineWidth = 1;
+    if (iW * 0.5 - slide > 8) {
+      for (let i = 0; i < 4; i++) {
+        const yLine = iY + (iH / 4) * (i + 0.5);
+        ctx.beginPath();
+        ctx.moveTo(iX, yLine);
+        ctx.lineTo(iX + iW * 0.5 - slide, yLine);
+        ctx.moveTo(iX + iW * 0.5 + slide, yLine);
+        ctx.lineTo(iX + iW, yLine);
+        ctx.stroke();
+      }
+    }
+
+    // Iron handles
+    if (openProgress < 0.5) {
+      ctx.fillStyle = '#fbbf24';
+      ctx.shadowColor = '#fbbf24'; ctx.shadowBlur = 6;
+      ctx.beginPath();
+      ctx.arc(iX + iW * 0.5 - slide - 6, iY + iH * 0.5, 3, 0, Math.PI * 2);
+      ctx.arc(iX + iW * 0.5 + slide + 6, iY + iH * 0.5, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Particles rising from base
+    if (openProgress > 0.2) {
+      ctx.shadowColor = '#fff'; ctx.shadowBlur = 8;
+      ctx.fillStyle = '#fff';
+      for (let i = 0; i < 5; i++) {
+        const pX = iX + (iW / 5) * (i + 0.5) + Math.sin(frame * 0.05 + i) * 6;
+        const pY = iY + iH - 20 - ((frame * 0.5 + i * 24) % 80);
+        ctx.globalAlpha = 1 - ((frame * 0.5 + i * 24) % 80) / 80;
+        ctx.beginPath();
+        ctx.arc(pX, pY, 1.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.restore();
+
+    // Walk-through hint text floating above door
+    if (openProgress > 0.6) {
+      ctx.save();
+      ctx.font = "bold 14px 'JetBrains Mono', monospace";
+      ctx.fillStyle = '#fbbf24';
+      ctx.shadowColor = '#fbbf24'; ctx.shadowBlur = 12;
+      ctx.textAlign = 'center';
+      const float = Math.sin(frame * 0.08) * 4;
+      ctx.fillText('▸ ENTER ◂', cx, y - 36 + float);
+      ctx.restore();
+    }
+  }
+
+  // ─── In-world speech bubble ─────────────────────────────────────
+  _drawSpeechBubble(ctx, engine) {
+    const b = engine.activeBubble;
+    if (!b) return;
+    const fadeIn = Math.min(1, b.age / 12);
+    const fadeOut = Math.min(1, (b.ttl - b.age) / 24);
+    const alpha = Math.min(fadeIn, fadeOut);
+    if (alpha <= 0) return;
+
+    const p = engine.player;
+    const x = p.x + p.w / 2;
+    const y = p.y - 30;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.font = "italic 14px 'Cormorant Garamond', serif";
+    const text = b.text;
+    const padding = 12;
+    const maxWidth = 320;
+    const lines = this._wrapText(ctx, text, maxWidth);
+    const lineH = 18;
+    const bw = Math.min(maxWidth, Math.max(80, ...lines.map(l => ctx.measureText(l).width))) + padding * 2;
+    const bh = lines.length * lineH + padding;
+    const bx = x - bw / 2;
+    const by = y - bh - 14;
+
+    // Bubble fill
+    ctx.shadowColor = '#a855f7'; ctx.shadowBlur = 14;
+    ctx.fillStyle = 'rgba(10,4,24,0.92)';
+    ctx.strokeStyle = '#a855f7';
+    ctx.lineWidth = 1.5;
+    this._roundedRect(ctx, bx, by, bw, bh, 8);
+    ctx.fill(); ctx.stroke();
+
+    // Tail
+    ctx.beginPath();
+    ctx.moveTo(x - 6, by + bh);
+    ctx.lineTo(x + 6, by + bh);
+    ctx.lineTo(x, by + bh + 10);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(10,4,24,0.92)';
+    ctx.fill();
+    ctx.stroke();
+
+    // Text
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#e8d5ff';
+    ctx.textAlign = 'center';
+    lines.forEach((l, i) => {
+      ctx.fillText(l, x, by + padding + (i + 0.7) * lineH);
+    });
+
+    ctx.restore();
+  }
+
+  _wrapText(ctx, text, maxWidth) {
+    const words = text.split(' ');
+    const lines = [];
+    let cur = '';
+    for (const w of words) {
+      const test = cur ? cur + ' ' + w : w;
+      if (ctx.measureText(test).width <= maxWidth) cur = test;
+      else { if (cur) lines.push(cur); cur = w; }
+    }
+    if (cur) lines.push(cur);
+    return lines;
+  }
+
+  _roundedRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
   }
 
   _drawUltimateAura(ctx, player, frame) {

@@ -14,7 +14,8 @@ export class GameEngine {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.W = 1280;
-    this.H = 720;
+    this.H = 720;          // viewport height (camera window)
+    this.levelH = 720;     // full level height (camera follows within this range)
     canvas.width = this.W;
     canvas.height = this.H;
 
@@ -29,6 +30,18 @@ export class GameEngine {
     this.soulSeeds = [];
     this.soulSeedSpawnTimer = 0;
     this.particles = new ParticleSystem();
+
+    // Camera (Y only — horizontal stays static)
+    this.cameraY = 0;
+
+    // Exit door (spawned when waves clear)
+    this.exitDoor = null;
+    this.doorEntered = false;
+    this.bestCombo = 0;
+
+    // Dialogue queue: { text, speaker, ttl, kind: 'bubble'|'box' }
+    this.activeBubble = null;   // currently shown floating bubble (gameplay)
+    this.bubbleQueue = [];
 
     // Virtual (touch) input state - merged with keyboard
     this.touchInput = {
@@ -220,6 +233,8 @@ export class GameEngine {
 
     this.particles.update();
     this._updateFlybutt();
+    this._updateCamera();
+    this._updateBubble();
     this.manageWaves();
 
     if (this.callbacks.onStatsUpdate) {
@@ -323,6 +338,16 @@ export class GameEngine {
       return;
     }
 
+    // Track best combo for floor-complete display
+    if (this.player.combo > this.bestCombo) this.bestCombo = this.player.combo;
+
+    // Door is already up — check entry
+    if (this.exitDoor && this.exitDoor.opened && !this.doorEntered) {
+      this._updateExitDoor();
+      this._checkDoorEntry();
+      return;
+    }
+
     if (this.floorCleared || this.showingBossWarning) return;
     if (this.waveCooldown > 0) { this.waveCooldown--; return; }
     if (this.waveSpawning) return;
@@ -333,14 +358,58 @@ export class GameEngine {
         this.waveCooldown = 90;
         this.spawnWave();
       } else {
+        // All waves cleared — spawn the cathedral door
         this.floorCleared = true;
         this.gameState = 'floor_clear';
-        this.pause();
         this.sound.playFloorClear();
-        this.sound.setBossMusic(false); // reset to normal tempo
-        if (this.callbacks.onFloorClear) this.callbacks.onFloorClear(this.floor);
+        this.sound.setBossMusic(false);
+        this._spawnExitDoor();
+        this.exitDoor.opened = true;
+        this.exitDoor.unlockTimer = 60;
+        this.sound.playDoorUnlock && this.sound.playDoorUnlock();
+        // Bubble hint
+        this._pushBubble('The way opens. Walk into the light.', 'maytradalis', 240);
       }
     }
+  }
+
+  _updateExitDoor() {
+    const d = this.exitDoor;
+    if (!d) return;
+    if (d.unlockTimer > 0) d.unlockTimer--;
+    if (d.openProgress < 1) d.openProgress = Math.min(1, d.openProgress + 0.015);
+    d.glow += 0.04;
+  }
+
+  _checkDoorEntry() {
+    const d = this.exitDoor;
+    if (!d || !d.opened || this.doorEntered) return;
+    if (d.openProgress < 0.55) return; // wait until partway open
+    const px = this.player.x + this.player.w / 2;
+    const py = this.player.y + this.player.h / 2;
+    if (px > d.x + 20 && px < d.x + d.w - 20 && py > d.y && py < d.y + d.h) {
+      this.doorEntered = true;
+      this.pause();
+      this.particles.burst(px, py, 'ultimate_explosion');
+      if (this.callbacks.onFloorComplete) {
+        this.callbacks.onFloorComplete({
+          floor: this.floor,
+          score: this.player.score,
+          kills: this.player.kills,
+          bestCombo: this.bestCombo,
+        });
+      }
+    }
+  }
+
+  _pushBubble(text, speaker, ttl = 180) {
+    this.activeBubble = { text, speaker, ttl, age: 0 };
+  }
+
+  _updateBubble() {
+    if (!this.activeBubble) return;
+    this.activeBubble.age++;
+    if (this.activeBubble.age >= this.activeBubble.ttl) this.activeBubble = null;
   }
 
   spawnWave() {
@@ -409,23 +478,78 @@ export class GameEngine {
 
   generateFloor() {
     const theme = Math.floor((this.floor - 1) / 5) % 4;
+    const isBossFloor = this.floor % 5 === 0;
+
+    // Variable level height per floor:
+    // boss arenas stay flat 720; intermediate floors vary 720/1080/1440
+    const heightOptions = [720, 720, 1080, 1080, 1440];
+    this.levelH = isBossFloor ? 720 : heightOptions[Math.floor(Math.random() * heightOptions.length)];
+    this.cameraY = Math.max(0, this.levelH - this.H); // start at bottom (player spawns near ground)
+
+    const groundY = this.levelH - 50;
     this.platforms = [
-      { x: 0, y: 670, w: 1280, h: 50, theme }
+      { x: 0, y: groundY, w: 1280, h: 50, theme }
     ];
 
-    const positions = [
-      [200, 530, 200], [520, 490, 180], [840, 530, 200], [1060, 495, 190],
-      [100, 390, 170], [380, 355, 185], [680, 375, 175], [980, 360, 185],
-      [270, 245, 165], [600, 215, 175], [920, 255, 170]
+    // Always-available bottom platforms (in viewport at start)
+    const bottomBand = [
+      [200, groundY - 140, 200], [520, groundY - 180, 180],
+      [840, groundY - 140, 200], [1060, groundY - 175, 190]
     ];
-    const count = 4 + Math.floor(Math.random() * 3);
+    // Mid-band positions (relative to ground)
+    const midBand = [
+      [100, groundY - 280, 170], [380, groundY - 315, 185],
+      [680, groundY - 295, 175], [980, groundY - 310, 185]
+    ];
+    // Upper-band positions
+    const upperBand = [
+      [270, groundY - 425, 165], [600, groundY - 455, 175], [920, groundY - 415, 170]
+    ];
+
+    let positions = [...bottomBand, ...midBand];
+    if (this.levelH >= 1080) {
+      positions = positions.concat(upperBand);
+      // Add extra vertical traversal platforms
+      const extraTop = groundY - 600;
+      positions.push([200, extraTop, 160], [560, extraTop - 50, 160], [900, extraTop - 20, 160]);
+    }
+    if (this.levelH >= 1440) {
+      // Add a super-high tier
+      const topTier = groundY - 850;
+      positions.push([320, topTier, 170], [700, topTier - 40, 170], [1020, topTier, 170]);
+      const peakTier = groundY - 1100;
+      positions.push([480, peakTier, 180], [820, peakTier - 30, 180]);
+    }
+
+    const count = Math.min(positions.length, 5 + Math.floor(Math.random() * 4));
     const selected = [...positions].sort(() => Math.random() - 0.5).slice(0, count);
     for (const [x, y, w] of selected) {
-      const jx = (Math.random() - 0.5) * 60;
-      const jy = (Math.random() - 0.5) * 40;
-      const pw = w + (Math.random() - 0.5) * 60;
+      const jx = (Math.random() - 0.5) * 50;
+      const jy = (Math.random() - 0.5) * 30;
+      const pw = w + (Math.random() - 0.5) * 50;
       this.platforms.push({ x: x + jx - pw / 2, y: y + jy, w: pw, h: 22, theme });
     }
+
+    // Reset door + camera state
+    this.exitDoor = null;
+    this.doorEntered = false;
+  }
+
+  // Spawn the cathedral exit door on the right side of the ground
+  _spawnExitDoor() {
+    const groundY = this.levelH - 50;
+    const doorW = 130;
+    const doorH = 200;
+    this.exitDoor = {
+      x: this.W - doorW - 30,
+      y: groundY - doorH,
+      w: doorW,
+      h: doorH,
+      opened: false,        // unlock animation playing or done
+      openProgress: 0,      // 0..1 animated opening
+      unlockTimer: 0,
+      glow: 0,
+    };
   }
 
   advanceFloor(upgradeId) {
@@ -435,21 +559,51 @@ export class GameEngine {
     }
     this.floor++;
     this.wave = 0;
-    this.maxWaves = 3 + Math.floor(this.floor / 5);
+    const isBossFloor = this.floor % 5 === 0;
+    this.maxWaves = isBossFloor ? 1 : (3 + Math.floor(this.floor / 5));
     this.floorCleared = false;
     this.bossActive = false;
     this.gameState = 'playing';
     this.enemies = [];
     this.projectiles = [];
     this.soulSeeds = [];
+    this.exitDoor = null;
+    this.doorEntered = false;
+    this.bestCombo = 0;
     this.generateFloor();
-    this.player.x = 200; this.player.y = 400;
+    // Spawn player just above the ground at the left
+    this.player.x = 200;
+    this.player.y = this.levelH - 50 - this.player.h - 200;
     this.player.vx = 0; this.player.vy = 0;
     this.player.floorsCleared++;
+    this.cameraY = Math.max(0, this.levelH - this.H);
+
+    // Tell music engine to switch to this biome theme
+    const theme = Math.floor((this.floor - 1) / 5) % 4;
+    if (this.sound.setMusicTheme) this.sound.setMusicTheme(theme);
+
+    // Floor-start dialogue beat
+    this._floorStartDialogue();
+
     this.resume();
     this.wave = 1;
     this.waveCooldown = 0;
     this.spawnWave();
+  }
+
+  _floorStartDialogue() {
+    const lines = [
+      "Another floor of the Endless.",
+      "The plague spreads. We descend.",
+      "Sorrow-Eater hungers.",
+      "Ava waits. Closer now.",
+      "Master Death watches.",
+      "The Lurker shifts in its lair.",
+      "Worlds collapse beneath my feet.",
+      "Souls scream as we approach.",
+    ];
+    const line = lines[(this.floor - 1) % lines.length];
+    this._pushBubble(line, 'maytradalis', 180);
   }
 
   _updateFlybutt() {
@@ -459,6 +613,20 @@ export class GameEngine {
     const targetY = p.y - 35;
     this.flybutt.x += (targetX - this.flybutt.x) * 0.06;
     this.flybutt.y += (targetY - this.flybutt.y) * 0.06;
+  }
+
+  // Camera follows player vertically inside [0..levelH - H]
+  _updateCamera() {
+    if (this.levelH <= this.H) {
+      this.cameraY = 0;
+      return;
+    }
+    const playerCenterY = this.player.y + this.player.h / 2;
+    // Target the camera so the player stays around 60% down the viewport
+    let target = playerCenterY - this.H * 0.6;
+    target = Math.max(0, Math.min(this.levelH - this.H, target));
+    // Smooth follow
+    this.cameraY += (target - this.cameraY) * 0.08;
   }
 
   setTouch(action, value) {

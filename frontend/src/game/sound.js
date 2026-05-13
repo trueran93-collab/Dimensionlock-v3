@@ -346,6 +346,55 @@ class MusicEngine {
     this.musicGain.gain.setValueAtTime(this.musicGain.gain.value, ct);
     this.musicGain.gain.linearRampToValueAtTime(target, ct + 1.2);
   }
+
+  // Switch chord progression key based on biome
+  setTheme(themeIdx) {
+    const ct = this.ctx.currentTime;
+    const themes = [
+      // 0: Gothic violet — D minor (default, dark)
+      [
+        { strings: [146.83, 220.00, 293.66], choir: [293.66, 349.23, 440.00], bassFreq: 73.42 },
+        { strings: [110.00, 164.81, 220.00], choir: [220.00, 261.63, 329.63], bassFreq: 55.00 },
+        { strings: [116.54, 174.61, 233.08], choir: [233.08, 293.66, 349.23], bassFreq: 58.27 },
+        { strings: [130.81, 196.00, 261.63], choir: [261.63, 329.63, 392.00], bassFreq: 65.41 },
+      ],
+      // 1: Toxic cyber — E minor pentatonic, slightly brighter, faster
+      [
+        { strings: [164.81, 246.94, 329.63], choir: [329.63, 392.00, 493.88], bassFreq: 82.41 },
+        { strings: [123.47, 184.99, 246.94], choir: [246.94, 311.13, 369.99], bassFreq: 61.74 },
+        { strings: [146.83, 220.00, 293.66], choir: [293.66, 349.23, 440.00], bassFreq: 73.42 },
+        { strings: [164.81, 246.94, 329.63], choir: [329.63, 392.00, 493.88], bassFreq: 82.41 },
+      ],
+      // 2: Hellfire — F# minor, ominous high tension
+      [
+        { strings: [185.00, 277.18, 369.99], choir: [369.99, 440.00, 554.37], bassFreq: 92.50 },
+        { strings: [138.59, 207.65, 277.18], choir: [277.18, 329.63, 415.30], bassFreq: 69.30 },
+        { strings: [146.83, 220.00, 293.66], choir: [293.66, 349.23, 440.00], bassFreq: 73.42 },
+        { strings: [164.81, 246.94, 329.63], choir: [329.63, 392.00, 493.88], bassFreq: 82.41 },
+      ],
+      // 3: Void blue — C minor, ethereal, slower
+      [
+        { strings: [130.81, 196.00, 261.63], choir: [261.63, 311.13, 392.00], bassFreq: 65.41 },
+        { strings: [103.83, 155.56, 207.65], choir: [207.65, 246.94, 311.13], bassFreq: 51.91 },
+        { strings: [110.00, 164.81, 220.00], choir: [220.00, 261.63, 329.63], bassFreq: 55.00 },
+        { strings: [123.47, 184.99, 246.94], choir: [246.94, 293.66, 369.99], bassFreq: 61.74 },
+      ],
+    ];
+    this.chords = (themes[themeIdx % 4] || themes[0]).map((c, i) => ({
+      ...c,
+      name: ['Tm','Sub','Dom','Tonic'][i] || 'T'
+    }));
+    // Slight tempo variation per biome
+    const tempos = [80, 88, 76, 74];
+    this.tempo = this.bossMode ? 95 : (tempos[themeIdx % 4] || 80);
+    this.beatDur = 60 / this.tempo;
+    this.barDur  = this.beatDur * 4;
+    // Smooth fade through transition
+    this.musicGain.gain.cancelScheduledValues(ct);
+    this.musicGain.gain.setValueAtTime(this.musicGain.gain.value, ct);
+    this.musicGain.gain.linearRampToValueAtTime(0.32, ct + 0.4);
+    this.musicGain.gain.linearRampToValueAtTime(this.bossMode ? 0.58 : 0.44, ct + 1.2);
+  }
 }
 
 
@@ -1186,6 +1235,204 @@ class SoundEngine {
 
   setBossMusic(enabled) {
     if (this.music) this.music.setBossMode(enabled);
+  }
+
+  // Tell the music engine which biome/theme to play
+  setMusicTheme(themeIdx) {
+    if (this.music && this.music.setTheme) this.music.setTheme(themeIdx);
+  }
+
+  // ── External audio (HTMLAudio for the menu .wav track) ───
+  _ensureMenuAudio() {
+    if (this._menuAudio) return this._menuAudio;
+    const a = new Audio('https://customer-assets.emergentagent.com/job_mobile-ui-demon-fix/artifacts/hrrb2l64_Theenderswar%28inst%29.wav');
+    a.loop = true;
+    a.volume = 0;
+    a.preload = 'auto';
+    this._menuAudio = a;
+    return a;
+  }
+
+  playMenuMusic() {
+    if (!this.enabled) return;
+    const a = this._ensureMenuAudio();
+    try {
+      const p = a.play();
+      if (p && typeof p.then === 'function') p.catch(() => {});
+    } catch (e) { /* ignore — needs user gesture */ }
+    // Fade in
+    a.volume = 0;
+    const targetVol = 0.42;
+    const startT = Date.now();
+    const fadeIn = () => {
+      const elapsed = (Date.now() - startT) / 1000;
+      if (elapsed >= 1.2 || !this._menuAudio) {
+        if (this._menuAudio) this._menuAudio.volume = targetVol;
+        return;
+      }
+      a.volume = Math.min(targetVol, (elapsed / 1.2) * targetVol);
+      requestAnimationFrame(fadeIn);
+    };
+    requestAnimationFrame(fadeIn);
+  }
+
+  stopMenuMusic() {
+    if (!this._menuAudio) return;
+    const a = this._menuAudio;
+    const startVol = a.volume;
+    const startT = Date.now();
+    const fadeOut = () => {
+      const elapsed = (Date.now() - startT) / 1000;
+      if (elapsed >= 0.8) {
+        a.pause();
+        a.currentTime = 0;
+        a.volume = startVol;
+        return;
+      }
+      a.volume = Math.max(0, startVol * (1 - elapsed / 0.8));
+      requestAnimationFrame(fadeOut);
+    };
+    requestAnimationFrame(fadeOut);
+  }
+
+  // ── Special stings ───────────────────────────────────────
+
+  // Floor complete victory sting (synth) - triumphant orchestral hit
+  playFloorCompleteSting() {
+    if (!this.ctx || !this.enabled) return;
+    const t = this._time();
+
+    // Big bell hit
+    [220, 330, 440, 554.37, 659.26, 880].forEach((freq, i) => {
+      const osc  = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = i < 2 ? 'triangle' : 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.18 - i * 0.018, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 2.4);
+      osc.connect(gain); gain.connect(this._masterGain);
+      osc.start(t); osc.stop(t + 2.5);
+      this._reverb$(gain, 0.45);
+    });
+
+    // Choir-style rise
+    [261.63, 329.63, 392.00, 523.25].forEach((freq, i) => {
+      const osc  = this.ctx.createOscillator();
+      const lpf  = this.ctx.createBiquadFilter();
+      const gain = this.ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.value = freq;
+      osc.detune.value = i % 2 === 0 ? -8 : 8;
+      lpf.type = 'lowpass'; lpf.frequency.value = 1600;
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.13, t + 0.4);
+      gain.gain.setValueAtTime(0.13, t + 1.8);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 3.2);
+      osc.connect(lpf); lpf.connect(gain); gain.connect(this._masterGain);
+      osc.start(t); osc.stop(t + 3.3);
+      this._reverb$(gain, 0.35);
+    });
+
+    // Deep impact thud at start
+    const impOsc  = this.ctx.createOscillator();
+    const impGain = this.ctx.createGain();
+    impOsc.type = 'sine';
+    impOsc.frequency.setValueAtTime(90, t);
+    impOsc.frequency.exponentialRampToValueAtTime(35, t + 0.5);
+    impGain.gain.setValueAtTime(0.7, t);
+    impGain.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+    impOsc.connect(impGain); impGain.connect(this._masterGain);
+    impOsc.start(t); impOsc.stop(t + 0.65);
+    this._reverb$(impGain, 0.3);
+  }
+
+  // Door unlock — heavy mechanism + chime
+  playDoorUnlock() {
+    if (!this.ctx || !this.enabled) return;
+    const t = this._time();
+
+    // Big mechanical thunk
+    const osc  = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(125, t);
+    osc.frequency.exponentialRampToValueAtTime(45, t + 0.25);
+    gain.gain.setValueAtTime(0.7, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.32);
+    osc.connect(gain); gain.connect(this._masterGain);
+    osc.start(t); osc.stop(t + 0.36);
+    this._reverb$(gain, 0.25);
+
+    // Chime/sparkle on top
+    [880, 1320, 1760].forEach((freq, i) => {
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = 'sine';
+      o.frequency.value = freq;
+      const start = t + 0.18 + i * 0.06;
+      g.gain.setValueAtTime(0, start);
+      g.gain.linearRampToValueAtTime(0.14, start + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, start + 0.9);
+      o.connect(g); g.connect(this._masterGain);
+      o.start(start); o.stop(start + 1);
+      this._reverb$(g, 0.3);
+    });
+  }
+
+  // Generic enemy roar — type-flavoured
+  playEnemyRoar(type = 'shadow_demon') {
+    if (!this.ctx || !this.enabled) return;
+    const t = this._time();
+
+    const profiles = {
+      shadow_demon:    { freq: 110, dur: 0.6, wave: 'sawtooth', noise: 1.2 },
+      void_sprite:     { freq: 440, dur: 0.3, wave: 'square',   noise: 0.5 },
+      dimension_watcher:{ freq: 220, dur: 0.5, wave: 'triangle',noise: 0.3 },
+      lurker_cultist:  { freq: 95,  dur: 0.7, wave: 'sawtooth', noise: 1.5 },
+      plague_imp:      { freq: 280, dur: 0.4, wave: 'square',   noise: 0.8 },
+      shadow_crawler:  { freq: 380, dur: 0.25,wave: 'sawtooth', noise: 0.6 },
+      ember_wraith:    { freq: 165, dur: 0.55,wave: 'triangle', noise: 1.0 },
+      bone_howler:     { freq: 75,  dur: 1.1, wave: 'sawtooth', noise: 1.8 },
+      hex_beast:       { freq: 70,  dur: 0.9, wave: 'sawtooth', noise: 1.6 },
+      boss:            { freq: 60,  dur: 1.4, wave: 'sawtooth', noise: 2.2 },
+    };
+    const p = profiles[type] || profiles.shadow_demon;
+
+    const carrier = this.ctx.createOscillator();
+    const mod     = this.ctx.createOscillator();
+    const modGain = this.ctx.createGain();
+    const gain    = this.ctx.createGain();
+
+    mod.frequency.value = 8 + Math.random() * 6;
+    modGain.gain.value = p.freq * 0.25;
+    mod.connect(modGain); modGain.connect(carrier.frequency);
+
+    carrier.type = p.wave;
+    carrier.frequency.setValueAtTime(p.freq, t);
+    carrier.frequency.exponentialRampToValueAtTime(p.freq * 0.55, t + p.dur);
+
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(0.32, t + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + p.dur);
+    carrier.connect(gain); gain.connect(this._masterGain);
+    carrier.start(t); carrier.stop(t + p.dur + 0.05);
+    mod.start(t); mod.stop(t + p.dur + 0.05);
+    this._reverb$(gain, 0.3);
+
+    // Breath/noise layer
+    if (p.noise > 0) {
+      const buf  = this._noiseBuf(p.dur * 0.8, 1.2);
+      const src  = this.ctx.createBufferSource();
+      const filt = this.ctx.createBiquadFilter();
+      const nGain= this.ctx.createGain();
+      src.buffer = buf;
+      filt.type = 'lowpass'; filt.frequency.value = 500 + p.freq * 1.5;
+      nGain.gain.setValueAtTime(0.08 * p.noise, t);
+      nGain.gain.exponentialRampToValueAtTime(0.001, t + p.dur);
+      src.connect(filt); filt.connect(nGain); nGain.connect(this._masterGain);
+      src.start(t);
+    }
   }
 }
 

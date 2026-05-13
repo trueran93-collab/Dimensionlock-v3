@@ -22,7 +22,7 @@ const useIsTouch = () => {
   return isTouch;
 };
 
-export default function GameCanvas({ onGameOver, onReturnToMenu }) {
+export default function GameCanvas({ onGameOver, onReturnToMenu, onFloorComplete, paused: externallyPaused, continueSignal }) {
   const canvasRef = useRef(null);
   const engineRef = useRef(null);
   const containerRef = useRef(null);
@@ -102,6 +102,30 @@ export default function GameCanvas({ onGameOver, onReturnToMenu }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // empty deps → identity never changes → engine is never recreated
 
+  const handleEngineFloorComplete = useCallback((info) => {
+    if (onFloorComplete) onFloorComplete(info);
+  }, [onFloorComplete]);
+
+  // When App tells us to continue (after FloorComplete screen),
+  // show the upgrade picker. The engine is still paused; advanceFloor will resume it.
+  useEffect(() => {
+    if (continueSignal && continueSignal > 0) {
+      const options = getRandomUpgrades(3, usedUpgradesRef.current);
+      setUpgradeOptions(options);
+      setShowUpgrade(true);
+    }
+  }, [continueSignal]);
+
+  // Pause/resume engine when App externally requests it (floor-complete overlay)
+  useEffect(() => {
+    if (!engineRef.current) return;
+    if (externallyPaused) {
+      engineRef.current.pause();
+    } else if (!paused) {
+      engineRef.current.resume();
+    }
+  }, [externallyPaused]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleBossWarning = useCallback(() => {
     setShowBossWarning(true);
     setTimeout(() => setShowBossWarning(false), 3500);
@@ -128,6 +152,7 @@ export default function GameCanvas({ onGameOver, onReturnToMenu }) {
     const engine = new GameEngine(canvas, {
       onStatsUpdate: setStats,
       onFloorClear: handleFloorClear,
+      onFloorComplete: handleEngineFloorComplete,
       onBossWarning: handleBossWarning,
       onGameOver: handleGameOver,
       onPauseToggle: handlePauseToggle,
@@ -136,7 +161,7 @@ export default function GameCanvas({ onGameOver, onReturnToMenu }) {
     engine.start();
 
     return () => { engine.stop(); };
-  }, [handleFloorClear, handleBossWarning, handleGameOver, handlePauseToggle]);
+  }, [handleFloorClear, handleEngineFloorComplete, handleBossWarning, handleGameOver, handlePauseToggle]);
 
   const hpPct = Math.max(0, (stats.hp / stats.maxHp) * 100);
   const spPct = Math.max(0, (stats.sp / stats.maxSp) * 100);
