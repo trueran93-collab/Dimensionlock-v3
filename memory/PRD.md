@@ -88,10 +88,10 @@ Earlier visual/audio overhaul, intro cutscene removed, mobile UI scaling, 5 new 
 - [ ] Per-floor biome enemy weighting (e.g. ember-heavy in hellfire ruins)
 - [ ] Dialogue beats between floors (Master Death taunts/encourages)
 - [ ] Additional ultimate variants unlocked via upgrades
-- [ ] Split `MainMenu.jsx` into BgCanvas + TitleArt + TabPanels modules (currently > 700 lines — flagged again by testing agent)
+- [x] ~~Split `MainMenu.jsx` into BgCanvas + TitleArt + TabPanels modules~~ ✅ v2.1 — now 253 lines, sub-modules live in `/components/menu/*`
+- [x] ~~Distinguish purchase 402/409 vs 400 status codes~~ ✅ v2.1 — 400 unknown, 402 insufficient, 409 maxed
 - [ ] Single source of truth for `UNLOCK_COSTS` (currently mirrored in backend + frontend)
 - [ ] `best_run` tie-break: include kills/best_combo when floor+score tie
-- [ ] Distinguish purchase errors with 402 (insufficient) vs 409 (maxed) instead of 400
 
 ### P2
 - [ ] Touch swipe gestures (swipe up to jump, swipe right to dash)

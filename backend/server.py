@@ -191,12 +191,17 @@ async def purchase_unlock(payload: UnlockPurchasePayload):
     unlocks = doc.get("unlocks") or Unlocks().model_dump()
     current_level = int(unlocks.get(payload.unlock_id, 0))
     cost_tiers = UNLOCK_COSTS[payload.unlock_id]
+    # 409 Conflict — the unlock is already at its terminal state
     if current_level >= len(cost_tiers):
-        raise HTTPException(status_code=400, detail="Unlock already maxed")
+        raise HTTPException(status_code=409, detail="Unlock already maxed")
     cost = cost_tiers[current_level]
     shards = int(doc.get("death_shards", 0))
+    # 402 Payment Required — semantic match for "not enough currency"
     if shards < cost:
-        raise HTTPException(status_code=400, detail="Not enough Death Shards")
+        raise HTTPException(
+            status_code=402,
+            detail=f"Not enough Death Shards (need {cost}, have {shards})"
+        )
 
     unlocks[payload.unlock_id] = current_level + 1
     doc["unlocks"] = unlocks
