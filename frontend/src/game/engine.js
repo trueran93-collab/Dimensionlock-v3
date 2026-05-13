@@ -77,6 +77,10 @@ export class GameEngine {
 
     initSprites();
     this.generateFloor();
+    // Position player just above the ground after the level is generated
+    this.player.x = 200;
+    this.player.y = this.levelH - 50 - this.player.h - 200;
+    this.cameraY = Math.max(0, this.levelH - this.H);
   }
 
   start() {
@@ -223,7 +227,8 @@ export class GameEngine {
     if (this.soulSeedSpawnTimer >= 360 && this.soulSeeds.length < 4 && this.enemies.length > 0) {
       this.soulSeedSpawnTimer = 0;
       const sx = 100 + Math.random() * (this.W - 200);
-      const seed = new SoulSeed(sx, 80, 6);
+      const seedY = (this.levelH || this.H) - 600;
+      const seed = new SoulSeed(sx, Math.max(80, seedY), 6);
       seed.vy = 0; seed.vx = 0;
       this.soulSeeds.push(seed);
     }
@@ -422,7 +427,8 @@ export class GameEngine {
       if (this.callbacks.onBossWarning) this.callbacks.onBossWarning();
       setTimeout(() => {
         this.enemies = [];
-        const boss = new BossServant(this.W / 2 - 40, 100, floorScale);
+        const groundY = this.levelH - 50;
+        const boss = new BossServant(this.W / 2 - 40, groundY - 300, floorScale);
         this.enemies.push(boss);
         this.bossActive = true;
         this.showingBossWarning = false;
@@ -435,12 +441,14 @@ export class GameEngine {
 
     const count = Math.floor(2 + this.floor * 0.35 + Math.random() * 2);
     const types = this.getEnemyTypes();
+    const groundY = this.levelH - 50;
+    const spawnY = groundY - 250;
 
     for (let i = 0; i < count; i++) {
       const t = types[Math.floor(Math.random() * types.length)];
       const side = Math.random() < 0.5;
       const sx = side ? 60 + Math.random() * 200 : this.W - 260 + Math.random() * 200;
-      this.spawnEnemy(t, sx, 50, floorScale);
+      this.spawnEnemy(t, sx, spawnY, floorScale);
     }
   }
 

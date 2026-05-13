@@ -113,9 +113,12 @@ export class Player {
 
     if (this.x < 0) { this.x = 0; this.vx = 0; }
     if (this.x + this.w > engine.W) { this.x = engine.W - this.w; this.vx = 0; }
-    if (this.y > engine.H + 80) {
+    const levelBottom = engine.levelH || engine.H;
+    if (this.y > levelBottom + 80) {
       this.takeDamage(20, engine, 'fall');
-      this.x = engine.W / 2; this.y = 200; this.vy = 0;
+      this.x = engine.W / 2;
+      this.y = Math.max(100, levelBottom - 200 - this.h);
+      this.vy = 0;
     }
 
     this._updateTimers();
@@ -436,7 +439,7 @@ class Enemy {
 
     if (this.x < 20) { this.x = 20; this.patrolDir = 1; }
     if (this.x + this.w > engine.W - 20) { this.x = engine.W - this.w - 20; this.patrolDir = -1; }
-    if (this.y > engine.H + 100) { this.dead = true; }
+    if (this.y > (engine.levelH || engine.H) + 100) { this.dead = true; }
 
     if (this.knockTimer > 0) { this.knockTimer--; }
     else this.ai(player, engine);
@@ -661,7 +664,7 @@ export class LurkerCultist extends Enemy {
       const side = Math.random() < 0.5 ? -1 : 1;
       this.x = player.x + side * 120;
       this.y = player.y - 80;
-      this.y = Math.max(50, Math.min(this.y, engine.H - 200));
+      this.y = Math.max(50, Math.min(this.y, (engine.levelH || engine.H) - 200));
       engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'smoke');
       engine.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 'dark_aura');
       return;
@@ -976,8 +979,8 @@ export class SoulSeed {
           break;
         }
       }
-      if (this.y > engine.H - 30) {
-        this.y = engine.H - 80;
+      if (this.y > (engine.levelH || engine.H) - 30) {
+        this.y = (engine.levelH || engine.H) - 80;
         this.baseY = this.y;
         this.settled = true;
       }
