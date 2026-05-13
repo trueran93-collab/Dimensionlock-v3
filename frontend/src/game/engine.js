@@ -72,13 +72,23 @@ export class GameEngine {
     this.wave = 1;
     this.spawnWave();
     this.loop();
+    // Start gothic rock background music
+    this.sound.startMusic();
   }
 
-  pause() { this.paused = true; }
-  resume() { this.paused = false; }
+  pause() {
+    this.paused = true;
+    this.sound.pauseMusic();
+  }
+
+  resume() {
+    this.paused = false;
+    this.sound.resumeMusic();
+  }
 
   stop() {
     this.running = false;
+    this.sound.stopMusic();
     if (this.rafId) cancelAnimationFrame(this.rafId);
     if (this._cleanupInputs) this._cleanupInputs();
   }
@@ -300,6 +310,7 @@ export class GameEngine {
         this.gameState = 'floor_clear';
         this.pause();
         this.sound.playFloorClear();
+        this.sound.setBossMusic(false); // reset to normal tempo
         if (this.callbacks.onFloorClear) this.callbacks.onFloorClear(this.floor);
       }
     }
@@ -320,6 +331,7 @@ export class GameEngine {
         this.bossActive = true;
         this.showingBossWarning = false;
         this.sound.playBossRoar();
+        this.sound.setBossMusic(true);
         this.resume();
       }, 3500);
       return;

@@ -37,6 +37,8 @@ export default function GameCanvas({ onGameOver, onReturnToMenu }) {
   const [showBossWarning, setShowBossWarning] = useState(false);
   const [upgradeOptions, setUpgradeOptions] = useState([]);
   const [usedUpgrades, setUsedUpgrades] = useState([]);
+  // Ref version keeps the callback identity stable so the engine is NEVER recreated on upgrade
+  const usedUpgradesRef = useRef([]);
   const [mobileControlsOn, setMobileControlsOn] = useState(false);
   const [paused, setPaused] = useState(false);
 
@@ -64,11 +66,15 @@ export default function GameCanvas({ onGameOver, onReturnToMenu }) {
     if (engineRef.current) engineRef.current.pause();
   }, []);
 
+  // Keep ref in sync
+  useEffect(() => { usedUpgradesRef.current = usedUpgrades; }, [usedUpgrades]);
+
   const handleFloorClear = useCallback((floor) => {
-    const options = getRandomUpgrades(3, usedUpgrades);
+    const options = getRandomUpgrades(3, usedUpgradesRef.current); // read from ref — stable
     setUpgradeOptions(options);
     setShowUpgrade(true);
-  }, [usedUpgrades]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // empty deps → identity never changes → engine is never recreated
 
   const handleBossWarning = useCallback(() => {
     setShowBossWarning(true);
