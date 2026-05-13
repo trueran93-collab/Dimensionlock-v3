@@ -6,8 +6,9 @@ Main character: **Maytradalis** — reaper-in-training with purple hair, black g
 
 ## Architecture
 - **Frontend**: React + HTML5 Canvas custom game engine (1280×720 design canvas, scales fluidly)
-- **Backend**: FastAPI + MongoDB (basic; client-side state currently)
+- **Backend**: FastAPI + MongoDB (meta-progression keyed by session_id in localStorage)
 - **Game Engine**: Custom class-based engine (`src/game/engine.js`)
+- **Sprite system**: 5 hand-drawn sprite sheets, state→{sheet,frame} mapping in `sprites.js`
 
 ## Implemented Features
 
@@ -22,49 +23,50 @@ Main character: **Maytradalis** — reaper-in-training with purple hair, black g
 - Boss every 5 floors (Lurker's Servant, 2 phases)
 - Enemy types: Shadow Demon, Void Sprite, Dimension Watcher, Lurker Cultist, Boss Servant
 
-### v1.1 (2025-02-26) — Visual & Audio Overhaul
-- Non-pixel high-res Maytradalis sprite (replaced pixel art)
-- Intro cinematic with typewriter dialogue (Master Death narration)
-- Main menu title reveal with letter-by-letter glow animation
-- Flybutt companion (yellow bee) follows player with bobbing animation
-- Web Audio API sound system (jump, dash, light/heavy/special attacks, hit, hurt, boss roar, floor clear, upgrade select)
+### v1.1 — v1.4
+Earlier visual/audio overhaul, intro cutscene removed, mobile UI scaling, 5 new demonic enemy types, Soul Seed/Ultimate, gothic backgrounds (see CHANGELOG entries v1.1-v1.4 in previous PRD revisions).
 
-### v1.3 (2026-02-12) — Cinematic & QoL Pass **(this session)**
-- **AI-generated single-character cutscenes** — Master Death, Flybutt, and The Lurker portraits generated via Gemini nano-banana (image-to-image with reference sheets) and saved to `/app/frontend/public/intro/`. Maytradalis uses the clean reference asset. Each character now has distinct floating animation:
-  - `charFloat` — gentle vertical sway (Maytradalis, Master Death)
-  - `flybuttHover` — erratic bee-like 4-point hover with rotation
-  - `lurkerWrithe` — squirming skew/scale undulation
-- **Single title reveal** — removed intro `title1` / `title2` scenes and the title block from the intro CTA; main menu is now the only place the title is revealed.
-- **Sprite facing direction fixed** — flipped boolean in renderer to match facingRight state.
-- **Pause menu** — ESC / P key or top-center PAUSE button opens "THE REAPER RESTS / Paused" overlay with Resume + Main Menu buttons.
-- **Death screen fix** — engine now ticks `player.deathTimer` even when player is in dead state, so Game Over screen reliably fires with Retry + Main Menu options.
-- **Background overhaul (no grid ground)** — removed cyberpunk perspective grid floor; replaced with foreground cyberpunk-gothic city infrastructure: tall apartment blocks with neon window-grid lights, hanging neon signs, blinking red antenna tips, gothic cathedral spires with stained-glass arched windows, and street lampposts with flickering teal bulbs and light cones.
-- New backend script: `/app/backend/scripts/generate_intro_chars.py` (idempotent regen of character images).
-- **Soul Seed collectibles** — purple/teal floating orbs drop from killed enemies + ambient spawns; magnetize to player on proximity; pickup fills the new Ultimate Charge bar
-- **Soul Harvest Ultimate** (key `U` / `R` or ULT button) — when charge bar reaches 100%, triggers a 2.5s spinning scythe whirlwind AoE with full i-frames, deals repeating damage in a 320×280 area around player
-- **Ultimate Charge Bar (ULT)** — third HUD bar (yellow gradient when ready, pulsing animation)
-- **Running particle trail** — purple ember puffs behind player while running on ground
-- **Mobile-friendly touch controls** — fixed-position on-screen buttons (D-pad ◀▶, JUMP, DASH, ULT, LIGHT, HEAVY, DARK AURA). Auto-detected via `ontouchstart`, `maxTouchPoints`, `(pointer: coarse)`, or `innerWidth <= 900`.
-- **Cinematic cyberpunk + gothic backgrounds** — parallax cyberpunk skyline with neon windows, gothic cathedral spires with stained-glass arched windows + crosses, floating gargoyle silhouettes, perspective neon grid floor (cyberpunk vanishing point), volumetric ground mist, dimensional rift flicker, vignette overlay. 4 themed color palettes rotate every 5 floors (gothic violet → toxic cyber → hellfire ruins → void blue cathedral).
-- New particle presets: `run_trail`, `ultimate_explosion`, `ultimate_spin`, `soul_pickup`
-- New sounds: `playSoulPickup`, `playUltimate`
+### v2.0 (2026-02-13) — **Phase 1 + 2 Full Overhaul** *(this session)*
 
-### v1.4 (2026-02-13) — Player Polish & World Depth **(this session)**
-- **Intro cutscene removed** — `App.js` boots directly to MainMenu. `IntroCinematic.jsx` deleted.
-- **Main Menu redesign** — uses the official "Dimension Lock — Deathly Stories" GlobalComix title artwork (provided by user) with subtle glitch overlay layers, animated title float, and tagline "A GlobalComix Series". Fully responsive: stacks vertically <1024px, scaled fonts/buttons <768px, character art repositions below buttons on mobile.
-- **Larger characters** — player hitbox 56×92 (was 44×72), sprite draw size 170 (was 130). Enemy hitboxes proportionally enlarged (~20–25%): ShadowDemon 50×78, VoidSprite 36×36, DimensionWatcher 56×56, LurkerCultist 46×86, BossServant 100×138. Attack hitboxes scaled to match.
-- **5 new demonic enemy types**:
-  - **Plague Imp** — green goblin with horns + venom drips; winds up & charges
-  - **Shadow Crawler** — low spider-like creature, lunges quickly
-  - **Ember Wraith** — floating fire ghoul, lobs fire projectiles
-  - **Bone Howler** — skeletal summoner, raises arms and spawns Void Sprites
-  - **Hex Beast** — horned brute with periodic shield phase (parries + reflects)
-- **Interactive backgrounds** — per-floor floating crystals that pulse when player lands a hit (`renderer.pulseNearestCrystal` hook), swaying hanging chains, occasional lightning strikes.
-- **Mobile UI scaling fixed** — `GameCanvas` measures container width via `ResizeObserver` and applies `transform: scale(hudScale)` (clamped 0.45–1) to HP/SP/ULT bars, Floor/Score panel, pause button, combo + ultimate text. `MobileControls` adapt button size + edge inset to viewport width.
-- **Sound overhaul** — 8 new SFX methods on `soundEngine`: `playHitHeavy` (extra thwack for heavy/ult), `playLand` (jump-landing soft thud), `playBlocked` (parry metallic clink), `playEnemyDeath(type)` (type-specific wail+splat), `playProjectileFire` (fire shoosh), `playEnemyCharge` (rising windup), `playSummon` (eerie chord rise + whoosh), `playUiClick`. Engine wires `playEnemyDeath` to enemy kills, `playHitHeavy` to heavy/ultimate hits, `playLand` to airborne→ground state changes, `playBlocked` to Hex Beast shield blocks.
-- **Viewport meta** — `maximum-scale=1, user-scalable=no, viewport-fit=cover` to prevent unintended zoom on mobile.
+#### P0 — Animated sprite sheets
+- **5 sprite sheets** wired into `sprites.js`:
+  - `master` 6×6 (idle 0-5, light 12-17, heavy 24-29, spin/ultimate 30-35)
+  - `running` 6×6 — *dedicated side-scrolling run cycle for walk + run*
+  - `movement` 5×5 (jump/fall row 3, hurt row 4)
+  - `death` 4×4 (death animation row 3)
+  - `special` 4×4 (special attack)
+- `getStateAnimation(state, animFrame, attackTimer, attackType, totalAttack)` → `{sheet, frame}` keeps the renderer branch-free.
 
-## Controls (v1.2)
+#### P0 — Backend meta-progression
+- New MongoDB collection `player_progress` keyed by `session_id`.
+- Endpoints:
+  - `GET  /api/progress/{session_id}` — zeroed for new IDs, no insert until save.
+  - `POST /api/progress/save` — additive update; `best_run` only overwrites if higher floor/score.
+  - `POST /api/progress/purchase {session_id, unlock_id}` — deducts cost from `UNLOCK_COSTS`.
+  - `GET  /api/progress/{session_id}/leaderboard` — top 10 best_runs.
+- Pydantic models: `PlayerProgress`, `Unlocks`, `BestRun`, `ProgressSavePayload`, `UnlockPurchasePayload`.
+- `UNLOCK_COSTS`: startHpBoost [25,60,120,200,320], startSpBoost [20,45,90,150,240], dashCharges [80,220], ultStart [40,100,180,280].
+
+#### P1 — Visual Juice (Phase 1)
+- **Hit-stop** (1-6 frames) on hits, with stronger stops on crits, heavies, and kills.
+- **Directional screen-shake** scaled per hit weight, with decay; applied via `ctx.translate` in renderer.
+- **Crit system** — 12% base + 4% per 5-combo (cap +20%); 1.75× damage; gold "CRIT" damage numbers.
+- **Damage numbers** revamped — colour by type (crit gold / special purple / heavy orange / light white), font scale boost on crit.
+- **Enemy death shatter VFX** — rotating shards burst (`particles.shatter()`), colour mapped per enemy type.
+- **Combo HUD revamp** — rank letters **D → C → B → A → S → SS** (thresholds 3/6/10/15/22/30) with per-tier colour/glow + scale pop animation.
+- **Low-HP pulse** — HP label and bar border flash red at < 30% HP.
+- **Full-ULT shine** — ULT bar uses pulsing gradient + READY label when 100%.
+
+#### P1 — Rewarding Gameplay (Phase 2)
+- **Main-menu Soul Shop tab** (`UnlocksShop.jsx`) — Death Shards balance card + 4 unlock cards (Vitality, Soul Pool, Phantom Dash, Soul Echo) with level dots, costs, BUY buttons.
+- **Start-of-run buffs** — `engine.applyStartBuffs(buffs)` applies +HP / +SP / extra dash charges / starting ULT % at engine boot.
+- **Floor-clear bonus tags** — PERFECT (no damage taken this floor), SWIFT (cleared < 75 s), OVERKILL (best combo ≥ 20). Each pushes a toast and grants Death Shards on run end.
+- **End-of-run Rank Screen** (`GameOver.jsx` revamped) — letter grade with theme colour, full stats grid (floor/score/kills/best combo), `+N` Death Shards earned card, "NEW PERSONAL BEST" badge when applicable. Saves to `/api/progress/save` automatically.
+- **Rare drops** — `_maybeDropRare` rolls 4.5% per enemy (100% on boss) for **Gold Soul Seed** (+250 score, +bonus shards) or **Red Rage Shard** (+50% damage for 10 s with red flash + HUD indicator + persistent pulse).
+- **Achievements system** (`services/achievements.js`) — 10 unlocks (FIRST BLOOD, CHAINBREAKER, SOUL EATER, SS RANK, DESCENDING, BOSS SLAYER, VOIDWALKER, UNTOUCHED, CENTURION, GOLDEN HARVEST). Hydrates from MongoDB on load, persists newly-unlocked on game over.
+- **Toast overlay** (`ToastOverlay.jsx`) — stacked banner UI for floor-bonus tags, achievements, and rare-drop pickups; fade-in/out with TTL.
+
+## Controls (unchanged)
 | Action | Keyboard | Mobile |
 |--------|----------|--------|
 | Move | Arrow / A,D | ◀ ▶ |
@@ -78,25 +80,26 @@ Main character: **Maytradalis** — reaper-in-training with purple hair, black g
 ## Prioritized Backlog
 
 ### P0
-- [x] ~~Remove intro cutscenes — boot straight to menu~~ ✅ v1.4
-- [x] ~~Mobile UI scaling — HUD + menu~~ ✅ v1.4
-- [ ] Floor 5 boss redesigned as actual Lurker plague doctor entity (current boss is generic Lurker Servant)
-- [ ] Persist high-score leaderboard to backend (MongoDB `/api/scores`)
-- [ ] Mobile portrait gameplay: shrink dark band above on-screen controls (move canvas to top or letterbox)
+*(All P0 items resolved this session.)*
 
 ### P1
+- [ ] Floor 5 boss redesigned as actual Lurker plague doctor entity (current is generic Servant)
 - [ ] Story progression: Save Grim Reaper Ava milestone after boss 3
-- [ ] Per-floor biome enemy weighting (e.g. ember-heavy in hellfire ruins, hex/howler-heavy in void blue cathedral)
+- [ ] Per-floor biome enemy weighting (e.g. ember-heavy in hellfire ruins)
 - [ ] Dialogue beats between floors (Master Death taunts/encourages)
 - [ ] Additional ultimate variants unlocked via upgrades
-- [ ] Split `MainMenu.jsx` into BgCanvas + TitleArt + TabPanels modules (currently 730 lines)
+- [ ] Split `MainMenu.jsx` into BgCanvas + TitleArt + TabPanels modules (currently > 700 lines — flagged again by testing agent)
+- [ ] Single source of truth for `UNLOCK_COSTS` (currently mirrored in backend + frontend)
+- [ ] `best_run` tie-break: include kills/best_combo when floor+score tie
+- [ ] Distinguish purchase errors with 402 (insufficient) vs 409 (maxed) instead of 400
 
 ### P2
 - [ ] Touch swipe gestures (swipe up to jump, swipe right to dash)
 - [ ] Settings menu (volume, controls remap, master volume slider)
-- [ ] Achievement system
 - [ ] Daily challenge floors
-- [ ] Save/load high-score leaderboard to backend
+- [ ] Cross-player leaderboard UI (data exists, no frontend yet)
+- [ ] More achievements (combat-style: dash-kill, dash-through-projectile, etc.)
+- [ ] Cosmetic unlocks (color tints, scythe trails) bought with Death Shards
 
 ## Lore
 > Maytradalis, reaper-in-training, walks the Endless — the space between realities.
@@ -105,5 +108,19 @@ Main character: **Maytradalis** — reaper-in-training with purple hair, black g
 
 ## Test Results
 - iteration_1 (v1.0): Backend 100%, Frontend 100%
-- iteration_2 (v1.2): Frontend 100%. Verified: HUD bars (HP/SP/ULT), all mobile-* testids on 390x844, desktop hides controls at 1280x720, soul-seed → ULT charge integration confirmed (0% → 86% via combat), keyboard inputs route correctly, cyberpunk/gothic background visually confirmed. Only minor design polish: mobile portrait canvas centering.
-- iteration_3 (v1.4): Frontend 100%. Verified: no IntroCinematic, new title artwork renders, all menu buttons functional, gameplay works (score 0→384, no console errors), HUD + mobile controls scale at 390x844 and 360x640, 5 new enemy classes + renderer methods + sound methods all present, interactive crystals/chains visible. 0 console errors.
+- iteration_2 (v1.2): Frontend 100% — HUD bars, mobile testids, walk-to-run trail confirmed
+- iteration_3 (v1.4): Frontend 100% — new title artwork, 5 new enemies, mobile scaling
+- **iteration_4 (v2.0): Backend 14/14 pytest pass, Frontend 100% smoke pass.** Confirmed: zeroed-progress on first load, shard purchase deducts correct cost (25 → balance 500→475), startHpBoost L1 applies +10 HP (100→110), FIRST BLOOD achievement toast surfaces, no console errors.
+
+## Critical Files
+- `/app/backend/server.py` — meta-progression API
+- `/app/backend/tests/test_progression.py` — backend test harness (added by testing agent)
+- `/app/frontend/src/services/progress.js` — session_id + UNLOCK_DEFS + computeRank/shardsFromRun
+- `/app/frontend/src/services/achievements.js` — `achievementTracker` singleton
+- `/app/frontend/src/game/sprites.js` — 5-sheet sprite system + `getStateAnimation`
+- `/app/frontend/src/game/engine.js` — hit-stop, screen-shake, crit, floor bonuses, applyStartBuffs
+- `/app/frontend/src/game/particles.js` — shatter shards + crit damage numbers
+- `/app/frontend/src/components/UnlocksShop.jsx` — Soul Shop panel
+- `/app/frontend/src/components/ToastOverlay.jsx` — toast stack + getComboRank
+- `/app/frontend/src/components/GameOver.jsx` — rank screen + auto-persist
+- `/app/frontend/src/components/GameCanvas.jsx` — orchestrates progress fetch, buff apply, achievement check
