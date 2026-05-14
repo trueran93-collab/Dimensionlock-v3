@@ -1,4 +1,4 @@
-import { Player, ShadowDemon, VoidSprite, DimensionWatcher, LurkerCultist, BossServant, SoulSeed, PlagueImp, ShadowCrawler, EmberWraith, BoneHowler, HexBeast } from './entities.js';
+import { Player, ShadowDemon, VoidSprite, DimensionWatcher, LurkerCultist, BossServant, LurkerBoss, SoulSeed, PlagueImp, ShadowCrawler, EmberWraith, BoneHowler, HexBeast } from './entities.js';
 import { ParticleSystem } from './particles.js';
 import { UPGRADES } from './upgrades.js';
 import { Renderer } from './renderer.js';
@@ -310,9 +310,9 @@ export class GameEngine {
     // Tick run-stat timers
     this.runStats.timeOnFloor++;
 
-    // Count boss kills (boss servant or future LurkerBoss)
+    // Count boss kills (boss servant + lurker boss)
     for (const e of this.enemies) {
-      if (e.dead && e.type === 'boss' && !e._countedBossKill) {
+      if (e.dead && (e.type === 'boss' || e.type === 'lurker_boss') && !e._countedBossKill) {
         e._countedBossKill = true;
         this.runStats.bossKills++;
       }
@@ -342,18 +342,57 @@ export class GameEngine {
   }
 
   updateProjectile(proj) {
+    if (proj.gravity) proj.vy += proj.gravity;
     proj.x += proj.vx;
     proj.y += proj.vy;
     proj.life--;
 
     if (!proj.active) return;
-    if (proj.life <= 0 || proj.x < 0 || proj.x > this.W || proj.y < 0 || proj.y > this.H) {
+
+    // Poison cloud lands → AoE puddle that ticks damage for ~1.5s
+    if (proj.kind === 'poison_cloud' && !proj.landed) {
+      const groundY = (this.levelH || this.H) - 50;
+      if (proj.y >= groundY - 4) {
+        proj.landed = true;
+        proj.y = groundY - 6;
+        proj.vx = 0; proj.vy = 0; proj.gravity = 0;
+        proj.life = 90;          // puddle lifetime
+        proj.size = 28;          // expanded radius
+        proj.tickTimer = 0;
+        this.particles.burst(proj.x, groundY - 8, 'dark_aura2');
+        this.particles.burst(proj.x, groundY - 8, 'sparks');
+      }
+    }
+
+    if (proj.life <= 0 || proj.x < 0 || proj.x > this.W ||
+        proj.y < 0 || proj.y > (this.levelH || this.H)) {
       proj.active = false;
       return;
     }
 
     if (proj.owner === 'enemy') {
-      // Check vs player
+      // Poison puddle: AoE damage every 15 frames while standing in it
+      if (proj.kind === 'poison_cloud' && proj.landed) {
+        proj.tickTimer = (proj.tickTimer || 0) + 1;
+        const px = this.player.x + this.player.w / 2;
+        const py = this.player.y + this.player.h - 8;
+        const inRange = Math.abs(px - proj.x) < proj.size && Math.abs(py - proj.y) < 20;
+        // Visual fizz
+        if (this.frameCount % 4 === 0) {
+          this.particles.burst(
+            proj.x + (Math.random() - 0.5) * proj.size * 1.4,
+            proj.y - Math.random() * 8,
+            'sparks', 2
+          );
+        }
+        if (inRange && proj.tickTimer >= 15) {
+          proj.tickTimer = 0;
+          this.dealEnemyDamage(this.player, Math.max(2, Math.floor(proj.damage * 0.4)), this);
+        }
+        return;
+      }
+
+      // Regular projectile collision vs player
       if (
         this.player.state !== 'dead' &&
         proj.x > this.player.x && proj.x < this.player.x + this.player.w &&
@@ -450,6 +489,7 @@ export class GameEngine {
       case 'dimension_watcher':return '#22d3ee';
       case 'void_sprite':      return '#c084fc';
       case 'boss':             return '#fbbf24';
+      case 'lurker_boss':      return '#16a34a';
       default:                 return '#a855f7';
     }
   }
@@ -622,7 +662,12 @@ export class GameEngine {
       setTimeout(() => {
         this.enemies = [];
         const groundY = this.levelH - 50;
-        const boss = new BossServant(this.W / 2 - 40, groundY - 300, floorScale);
+        // Lurker plague-doctor on Floor 5 + every 10 floors after (5, 10, 20, 30…)
+        // BossServant alternates on the in-between boss floors (15, 25…) for variety.
+        const lurkerEncounter = this.floor === 5 || (this.floor % 10 === 0);
+        const boss = lurkerEncounter
+          ? new LurkerBoss(this.W / 2 - 40, groundY - 200, floorScale)
+          : new BossServant(this.W / 2 - 40, groundY - 300, floorScale);
         this.enemies.push(boss);
         this.bossActive = true;
         this.showingBossWarning = false;

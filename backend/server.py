@@ -152,11 +152,22 @@ async def save_progress(payload: ProgressSavePayload):
         merged = sorted(set((base.get("achievements") or []) + payload.achievements))
         base["achievements"] = merged
     if payload.best_run is not None:
-        # Only overwrite best_run if floor or score is higher
+        # Compare by floor → score → kills → best_combo so the better run wins on ties.
         prev = base.get("best_run") or BestRun().model_dump()
         new = payload.best_run.model_dump()
-        if (new.get("floor", 0) > prev.get("floor", 0) or
-            (new.get("floor", 0) == prev.get("floor", 0) and new.get("score", 0) > prev.get("score", 0))):
+        prev_key = (
+            prev.get("floor", 0),
+            prev.get("score", 0),
+            prev.get("kills", 0),
+            prev.get("best_combo", 0),
+        )
+        new_key = (
+            new.get("floor", 0),
+            new.get("score", 0),
+            new.get("kills", 0),
+            new.get("best_combo", 0),
+        )
+        if new_key > prev_key:
             base["best_run"] = new
     if payload.total_runs is not None:          base["total_runs"] = max(base.get("total_runs", 0), int(payload.total_runs))
     if payload.total_kills is not None:         base["total_kills"] = max(base.get("total_kills", 0), int(payload.total_kills))

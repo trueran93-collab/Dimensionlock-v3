@@ -91,6 +91,54 @@ def test_save_progress_persists_and_monotonic():
     assert r4.json()["best_run"]["score"] == 4000
 
 
+# ── v2.2: best_run tie-break tuple (floor, score, kills, best_combo) ──────
+def test_best_run_tiebreak_same_floor_score_lower_kills_no_overwrite():
+    sid = _sid()
+    base = {"session_id": sid,
+            "best_run": {"floor": 5, "score": 5000, "kills": 30, "rank": "S", "best_combo": 15}}
+    r = requests.post(f"{BASE_URL}/api/progress/save", json=base, timeout=10)
+    assert r.status_code == 200
+    assert r.json()["best_run"]["kills"] == 30
+
+    # Same floor+score but LOWER kills — must NOT overwrite
+    worse = {"session_id": sid,
+             "best_run": {"floor": 5, "score": 5000, "kills": 10, "rank": "S", "best_combo": 20}}
+    r2 = requests.post(f"{BASE_URL}/api/progress/save", json=worse, timeout=10)
+    assert r2.status_code == 200
+    j = r2.json()
+    assert j["best_run"]["kills"] == 30, "kills must retain old (higher) value"
+    assert j["best_run"]["best_combo"] == 15
+
+
+def test_best_run_tiebreak_same_floor_score_kills_higher_combo_overwrites():
+    sid = _sid()
+    base = {"session_id": sid,
+            "best_run": {"floor": 5, "score": 5000, "kills": 30, "rank": "S", "best_combo": 15}}
+    requests.post(f"{BASE_URL}/api/progress/save", json=base, timeout=10)
+
+    better_combo = {"session_id": sid,
+                    "best_run": {"floor": 5, "score": 5000, "kills": 30, "rank": "S", "best_combo": 40}}
+    r = requests.post(f"{BASE_URL}/api/progress/save", json=better_combo, timeout=10)
+    assert r.status_code == 200
+    assert r.json()["best_run"]["best_combo"] == 40
+
+
+def test_best_run_tiebreak_same_floor_score_higher_kills_overwrites():
+    sid = _sid()
+    base = {"session_id": sid,
+            "best_run": {"floor": 5, "score": 5000, "kills": 30, "rank": "S", "best_combo": 50}}
+    requests.post(f"{BASE_URL}/api/progress/save", json=base, timeout=10)
+
+    higher_kills = {"session_id": sid,
+                    "best_run": {"floor": 5, "score": 5000, "kills": 60, "rank": "S", "best_combo": 5}}
+    r = requests.post(f"{BASE_URL}/api/progress/save", json=higher_kills, timeout=10)
+    assert r.status_code == 200
+    j = r.json()
+    assert j["best_run"]["kills"] == 60
+    # tuple (5,5000,60,5) > (5,5000,30,50) → new run wins entirely, combo resets to 5
+    assert j["best_run"]["best_combo"] == 5
+
+
 # ── POST /api/progress/purchase: unlock costs & validation ────────────────
 EXPECTED_COSTS = {
     'startHpBoost': [25, 60, 120, 200, 320],
@@ -124,12 +172,12 @@ def test_purchase_unlock_deducts_and_increments():
     assert j3["death_shards"] == 15  # 75 - 60
 
 
-def test_purchase_insufficient_shards_returns_400():
+def test_purchase_insufficient_shards_returns_402():
     sid = _sid()
     # No shards — try to buy startSpBoost (cost 20)
     r = requests.post(f"{BASE_URL}/api/progress/purchase",
                       json={"session_id": sid, "unlock_id": "startSpBoost"}, timeout=10)
-    assert r.status_code == 400
+    assert r.status_code == 402
     assert "shard" in r.text.lower() or "enough" in r.text.lower()
 
 
@@ -141,7 +189,7 @@ def test_purchase_unknown_unlock_id_returns_400():
     assert "unknown" in r.text.lower() or "unlock_id" in r.text.lower()
 
 
-def test_purchase_maxed_unlock_returns_400():
+def test_purchase_maxed_unlock_returns_409():
     sid = _sid()
     # Seed enough shards to max dashCharges (cost 80+220 = 300)
     requests.post(f"{BASE_URL}/api/progress/save",
@@ -151,10 +199,10 @@ def test_purchase_maxed_unlock_returns_400():
         r = requests.post(f"{BASE_URL}/api/progress/purchase",
                           json={"session_id": sid, "unlock_id": "dashCharges"}, timeout=10)
         assert r.status_code == 200
-    # 3rd attempt -> maxed
+    # 3rd attempt -> maxed (409 Conflict)
     r3 = requests.post(f"{BASE_URL}/api/progress/purchase",
                        json={"session_id": sid, "unlock_id": "dashCharges"}, timeout=10)
-    assert r3.status_code == 400
+    assert r3.status_code == 409
     assert "max" in r3.text.lower()
 
 

@@ -202,6 +202,8 @@ export default function GameCanvas({ onGameOver, onReturnToMenu, onFloorComplete
       });
       engine.applyStartBuffs(buffs);
       engineRef.current = engine;
+      // Debug handle — useful for headless tests / browser console
+      if (typeof window !== 'undefined') window.__engine = engine;
       engine.start();
     })();
 

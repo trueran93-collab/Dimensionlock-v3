@@ -1235,6 +1235,7 @@ export class Renderer {
         case 'bone_howler': this._drawBoneHowler(ctx, e, frame); break;
         case 'hex_beast': this._drawHexBeast(ctx, e, frame); break;
         case 'boss': this._drawLurkerHusk(ctx, e, frame, 'boss'); break;
+        case 'lurker_boss': this._drawLurkerBoss(ctx, e, frame); break;
         default: this._drawLurkerHusk(ctx, e, frame, 'small');
       }
       this._drawEnemyHpBar(ctx, e);
@@ -2049,13 +2050,16 @@ export class Renderer {
 
   _drawEnemyHpBar(ctx, e) {
     if (e.hp >= e.maxHp) return;
-    const bw = e.type === 'boss' ? e.w + 20 : e.w + 8;
-    const bh = e.type === 'boss' ? 10 : 5;
+    const isBoss = e.type === 'boss' || e.type === 'lurker_boss';
+    const bw = isBoss ? e.w + 20 : e.w + 8;
+    const bh = isBoss ? 10 : 5;
     const bx = e.x - (bw - e.w) / 2;
     const by = e.y - 14;
     const pct = Math.max(0, e.hp / e.maxHp);
-    const barColor = e.type === 'boss'
-      ? (pct < 0.5 ? '#ff3366' : '#a855f7')
+    const barColor = isBoss
+      ? (e.type === 'lurker_boss'
+          ? (pct < 0.33 ? '#ff3366' : pct < 0.66 ? '#fbbf24' : '#16a34a')
+          : (pct < 0.5 ? '#ff3366' : '#a855f7'))
       : '#cc2244';
 
     ctx.fillStyle = '#0a0008';
@@ -2064,11 +2068,18 @@ export class Renderer {
     ctx.shadowColor = barColor;
     ctx.shadowBlur = 8;
     ctx.fillRect(bx, by, bw * pct, bh);
-    if (e.type === 'boss') {
+    if (isBoss) {
       ctx.shadowBlur = 0;
-      ctx.strokeStyle = '#ff336655';
+      ctx.strokeStyle = e.type === 'lurker_boss' ? '#16a34a99' : '#ff336655';
       ctx.lineWidth = 1;
       ctx.strokeRect(bx, by, bw, bh);
+      // Phase tick marks on the Lurker bar (at 66% and 33%)
+      if (e.type === 'lurker_boss') {
+        ctx.fillStyle = '#fbbf24aa';
+        ctx.fillRect(bx + bw * 0.66 - 1, by - 1, 2, bh + 2);
+        ctx.fillStyle = '#ff3366aa';
+        ctx.fillRect(bx + bw * 0.33 - 1, by - 1, 2, bh + 2);
+      }
     }
     ctx.shadowBlur = 0;
   }
@@ -2076,6 +2087,38 @@ export class Renderer {
   _drawProjectiles(ctx, projectiles) {
     for (const p of projectiles) {
       if (!p.active) continue;
+      // Poison puddle (landed) — flat disc with rising bubbles
+      if (p.kind === 'poison_cloud' && p.landed) {
+        ctx.save();
+        const w = p.size;
+        const phase = (p.life % 20) / 20;
+        ctx.shadowColor = '#84cc16';
+        ctx.shadowBlur = 18;
+        const grad = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, w);
+        grad.addColorStop(0, '#bef264');
+        grad.addColorStop(0.4, '#84cc16');
+        grad.addColorStop(1, 'rgba(22,163,74,0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y, w, w * 0.35, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Bubbles
+        ctx.globalAlpha = 0.7;
+        for (let i = 0; i < 3; i++) {
+          const bx = p.x + Math.sin(phase * Math.PI * 2 + i) * w * 0.45;
+          const by = p.y - (i * 4 + phase * 14);
+          const br = 3 - phase * 1.4;
+          if (br > 0.5) {
+            ctx.fillStyle = '#bef264';
+            ctx.beginPath();
+            ctx.arc(bx, by, br, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        ctx.restore();
+        continue;
+      }
+      // Default airborne projectile
       ctx.save();
       ctx.shadowColor = p.glow || p.color;
       ctx.shadowBlur = 18;
@@ -2089,5 +2132,307 @@ export class Renderer {
       ctx.fill();
       ctx.restore();
     }
+  }
+
+  // ─── Lurker Boss (plague-doctor) ─ procedural draw matching reference art ─
+  _drawLurkerBoss(ctx, e, frame) {
+    const { x, y, w, h } = e;
+    const cx = x + w / 2;
+    const phase = frame * 0.04;
+    const hurtFlash = e.hurtTimer > 0 && Math.floor(frame / 3) % 2;
+    const attacking = e.attackState === 'attack' || e.attackState === 'special';
+    // Phase aura tinting
+    const auraColor = e.phase === 3 ? '#ff3366' : e.phase === 2 ? '#fbbf24' : '#16a34a';
+    const robeDark  = '#152812';
+    const robeBase  = '#2f4a25';
+    const robeHilite = '#4a6a32';
+    const accentLine = '#6ad96a';
+
+    ctx.save();
+    if (!e.facingRight) { ctx.translate(x + w, 0); ctx.scale(-1, 1); ctx.translate(-x, 0); }
+    if (hurtFlash) ctx.globalAlpha = 0.55;
+
+    // ── Floor shadow (large, soft) ───────────────────────────────
+    ctx.save();
+    ctx.globalAlpha = 0.55;
+    const shadowGrad = ctx.createRadialGradient(cx, y + h - 4, 2, cx, y + h - 4, w * 0.95);
+    shadowGrad.addColorStop(0, 'rgba(0,0,0,0.7)');
+    shadowGrad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = shadowGrad;
+    ctx.beginPath();
+    ctx.ellipse(cx, y + h - 4, w * 0.85, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // ── Boss aura halo (pulses on phase, intensifies on attack) ──
+    ctx.save();
+    const auraSize = w * (1.5 + Math.sin(phase) * 0.08) + (attacking ? 18 : 0);
+    const aGrad = ctx.createRadialGradient(cx, y + h * 0.5, 5, cx, y + h * 0.5, auraSize);
+    aGrad.addColorStop(0, `${auraColor}22`);
+    aGrad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = aGrad;
+    ctx.fillRect(cx - auraSize, y + h * 0.5 - auraSize, auraSize * 2, auraSize * 2);
+    ctx.restore();
+
+    // ─── Robe (long, flowing, widens at base) ────────────────────
+    const robeTopY = y + h * 0.30;
+    const robeBotY = y + h - 6;
+    const robeTopW = w * 0.55;
+    const robeBotW = w * 1.05;
+    const sway = Math.sin(phase * 0.6) * 3;
+
+    ctx.shadowColor = auraColor;
+    ctx.shadowBlur = e.phase >= 3 ? 18 : 8;
+
+    // Robe silhouette
+    ctx.beginPath();
+    ctx.moveTo(cx - robeTopW / 2, robeTopY);
+    ctx.quadraticCurveTo(cx - robeTopW * 0.55 + sway, y + h * 0.55, cx - robeBotW / 2 + sway, robeBotY);
+    ctx.lineTo(cx + robeBotW / 2 + sway, robeBotY);
+    ctx.quadraticCurveTo(cx + robeTopW * 0.55 + sway, y + h * 0.55, cx + robeTopW / 2, robeTopY);
+    ctx.closePath();
+    const robeGrad = ctx.createLinearGradient(cx, robeTopY, cx, robeBotY);
+    robeGrad.addColorStop(0, robeBase);
+    robeGrad.addColorStop(0.6, robeDark);
+    robeGrad.addColorStop(1, '#0a1308');
+    ctx.fillStyle = robeGrad;
+    ctx.fill();
+
+    // Robe lining stripes (vertical seam lights)
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = accentLine + '99';
+    ctx.lineWidth = 1.1;
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath();
+      ctx.moveTo(cx + i * 12, robeTopY + 10);
+      ctx.quadraticCurveTo(cx + i * 14 + sway, y + h * 0.7, cx + i * 16 + sway, robeBotY - 6);
+      ctx.stroke();
+    }
+
+    // Hem highlight
+    ctx.strokeStyle = robeHilite;
+    ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    ctx.moveTo(cx - robeBotW / 2 + sway, robeBotY - 4);
+    ctx.lineTo(cx + robeBotW / 2 + sway, robeBotY - 4);
+    ctx.stroke();
+
+    // Feet (peeking out)
+    ctx.fillStyle = '#0c1605';
+    ctx.fillRect(cx - 10, robeBotY - 5, 8, 8);
+    ctx.fillRect(cx + 2,  robeBotY - 5, 8, 8);
+
+    // ─── Belt / gem pouch sash (diagonal) ────────────────────────
+    const beltY = y + h * 0.39;
+    ctx.save();
+    ctx.fillStyle = '#1a2e10';
+    ctx.translate(cx, beltY);
+    ctx.rotate(-0.18);
+    ctx.fillRect(-w * 0.32, -5, w * 0.64, 10);
+    // Buckle ring
+    ctx.strokeStyle = '#5a6a3a';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.arc(0, 0, 5.5, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    // ─── Gem belt (4 colored gems indicating next attack type) ───
+    const gemColors = ['#ef4444', '#fbbf24', '#22d3ee', '#a855f7'];
+    const activeGem = Math.floor(frame / 20) % 4;
+    ctx.save();
+    ctx.translate(cx, beltY - 2);
+    ctx.rotate(-0.18);
+    for (let i = 0; i < 4; i++) {
+      const gx = -w * 0.22 + i * 14;
+      const isActive = i === activeGem && attacking;
+      ctx.fillStyle = gemColors[i];
+      ctx.shadowColor = gemColors[i];
+      ctx.shadowBlur = isActive ? 16 : 9;
+      ctx.beginPath();
+      ctx.rect(gx - 3.5, -3.5, 7, 7);
+      ctx.fill();
+      // Inner highlight
+      ctx.fillStyle = '#fff';
+      ctx.globalAlpha = isActive ? 0.9 : 0.55;
+      ctx.fillRect(gx - 1.5, -3, 1.5, 2.5);
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+
+    // ─── Body torso & arms ───────────────────────────────────────
+    const torsoTopY = y + h * 0.14;
+    const torsoW = w * 0.58;
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = robeBase;
+    ctx.beginPath();
+    ctx.moveTo(cx - torsoW / 2, torsoTopY + 6);
+    ctx.quadraticCurveTo(cx, torsoTopY - 3, cx + torsoW / 2, torsoTopY + 6);
+    ctx.lineTo(cx + robeTopW / 2 + 2, robeTopY);
+    ctx.lineTo(cx - robeTopW / 2 - 2, robeTopY);
+    ctx.closePath();
+    ctx.fill();
+
+    // ─── Arms (T-pose-ish, sway with attack state) ───────────────
+    const armSway = Math.sin(phase * 1.4) * 3;
+    const armSpread = attacking ? w * 0.55 : w * 0.46;
+    const armY = y + h * 0.20;
+    const armTipY = armY + armSway + (attacking ? -10 : 0);
+
+    // Left arm
+    ctx.strokeStyle = robeBase;
+    ctx.lineWidth = 9;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(cx - torsoW / 2 + 3, armY);
+    ctx.lineTo(cx - armSpread, armTipY);
+    ctx.stroke();
+    // Right arm
+    ctx.beginPath();
+    ctx.moveTo(cx + torsoW / 2 - 3, armY);
+    ctx.lineTo(cx + armSpread, armTipY);
+    ctx.stroke();
+    // Bandage wraps
+    ctx.strokeStyle = accentLine + 'cc';
+    ctx.lineWidth = 1;
+    for (let arm = -1; arm <= 1; arm += 2) {
+      for (let i = 0; i < 4; i++) {
+        const t = 0.25 + i * 0.18;
+        const wx = (cx - torsoW / 2 + 3) * (1 - t) + (cx + arm * armSpread) * t;
+        const wy = armY * (1 - t) + (armTipY) * t;
+        ctx.beginPath();
+        ctx.moveTo(wx - arm * 4, wy - 4);
+        ctx.lineTo(wx + arm * 4, wy + 4);
+        ctx.stroke();
+      }
+    }
+    // Hands (small gloves)
+    ctx.fillStyle = '#0c1605';
+    ctx.beginPath(); ctx.arc(cx - armSpread, armTipY, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + armSpread, armTipY, 4, 0, Math.PI * 2); ctx.fill();
+
+    // ─── Feather ruff (collar) ───────────────────────────────────
+    const ruffCY = torsoTopY + 4;
+    const ruffR  = w * 0.30;
+    ctx.fillStyle = '#1d2c14';
+    ctx.shadowColor = '#0a1308';
+    ctx.shadowBlur = 6;
+    // Feather spikes (radial)
+    const spikes = 14;
+    for (let i = 0; i < spikes; i++) {
+      const a = (Math.PI * 2 * i) / spikes + phase * 0.05;
+      const rL = ruffR * (0.85 + Math.sin(i + phase) * 0.15);
+      const sx = cx + Math.cos(a) * (ruffR * 0.4);
+      const sy = ruffCY + Math.sin(a) * (ruffR * 0.4);
+      const ex = cx + Math.cos(a) * rL;
+      const ey = ruffCY + Math.sin(a) * rL * 0.85;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(ex + 2, ey);
+      ctx.lineTo(ex - 2, ey);
+      ctx.closePath();
+      ctx.fill();
+    }
+    // Inner ruff body
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#28391a';
+    ctx.beginPath();
+    ctx.ellipse(cx, ruffCY, ruffR * 0.55, ruffR * 0.45, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // ─── Head / beak mask ────────────────────────────────────────
+    const headCY = y + h * 0.075;
+    // Neck shadow
+    ctx.fillStyle = '#0a1308';
+    ctx.fillRect(cx - 6, ruffCY - 6, 12, 8);
+
+    // Mask body (oval profile)
+    ctx.fillStyle = '#3e5a2e';
+    ctx.shadowColor = auraColor;
+    ctx.shadowBlur = e.phase >= 2 ? 10 : 5;
+    ctx.beginPath();
+    ctx.ellipse(cx, headCY, w * 0.20, w * 0.22, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Beak (long pointed)
+    ctx.fillStyle = '#506b3d';
+    ctx.beginPath();
+    ctx.moveTo(cx - 2, headCY + 2);
+    ctx.lineTo(cx + w * 0.30, headCY + w * 0.04);
+    ctx.lineTo(cx - 2, headCY + 10);
+    ctx.closePath();
+    ctx.fill();
+
+    // Beak shadow stripe
+    ctx.strokeStyle = '#1a2812';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(cx - 1, headCY + 6);
+    ctx.lineTo(cx + w * 0.28, headCY + w * 0.04);
+    ctx.stroke();
+
+    // Glowing eye (single — plague-doctor lens)
+    ctx.fillStyle = auraColor;
+    ctx.shadowColor = auraColor;
+    ctx.shadowBlur = 14;
+    ctx.beginPath();
+    ctx.arc(cx + 4, headCY - 2, 2.4 + Math.sin(phase * 2) * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // ─── Tricorne / witch-style hat (wide brim, two horns) ───────
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#1a2812';
+    // Brim (wide ellipse)
+    ctx.beginPath();
+    ctx.ellipse(cx, headCY - w * 0.10, w * 0.40, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Crown (rises up)
+    ctx.fillStyle = '#243a17';
+    ctx.beginPath();
+    ctx.moveTo(cx - w * 0.18, headCY - w * 0.10);
+    ctx.quadraticCurveTo(cx, headCY - w * 0.32, cx + w * 0.18, headCY - w * 0.10);
+    ctx.closePath();
+    ctx.fill();
+
+    // Two horns (curve up from the brim corners)
+    ctx.strokeStyle = '#1a2812';
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    // Left horn
+    ctx.beginPath();
+    ctx.moveTo(cx - w * 0.30, headCY - w * 0.09);
+    ctx.quadraticCurveTo(cx - w * 0.34, headCY - w * 0.24, cx - w * 0.16, headCY - w * 0.30);
+    ctx.stroke();
+    // Right horn
+    ctx.beginPath();
+    ctx.moveTo(cx + w * 0.30, headCY - w * 0.09);
+    ctx.quadraticCurveTo(cx + w * 0.34, headCY - w * 0.24, cx + w * 0.16, headCY - w * 0.30);
+    ctx.stroke();
+    // Center spike (small)
+    ctx.beginPath();
+    ctx.moveTo(cx, headCY - w * 0.30);
+    ctx.lineTo(cx, headCY - w * 0.36);
+    ctx.stroke();
+
+    // Subtle floating motion is achieved by drawing y is already passed.
+    // ── Phase-3 dark crackle aura over robe ──────────────────────
+    if (e.phase === 3) {
+      ctx.save();
+      ctx.shadowColor = '#ff3366';
+      ctx.shadowBlur = 14;
+      ctx.strokeStyle = '#ff336688';
+      ctx.lineWidth = 1.2;
+      for (let i = 0; i < 4; i++) {
+        const a = phase * 0.6 + i * 1.8;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(a) * 8, y + h * 0.5);
+        ctx.lineTo(cx + Math.cos(a) * (w * 0.6), y + h * 0.5 + Math.sin(a) * 30);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    ctx.restore();
   }
 }

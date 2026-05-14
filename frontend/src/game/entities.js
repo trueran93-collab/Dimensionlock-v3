@@ -789,11 +789,11 @@ export class BossServant extends Enemy {
 export class LurkerBoss extends Enemy {
   constructor(x, y, scale = 1) {
     super(x, y, {
-      w: 78, h: 142,
+      w: 120, h: 220,
       hp: Math.floor(820 * scale),
       speed: 1.8,
       damage: Math.floor(20 * scale),
-      attackRange: 95,
+      attackRange: 110,
       detectionRange: 9999,
       type: 'lurker_boss',
       score: 700
